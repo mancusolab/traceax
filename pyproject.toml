@@ -5,10 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "traceax"
 dynamic = ["version"]
-description = ''
-readme = "README.md"
+description = ""
+readme = "README.rst"
 requires-python = ">=3.9"
-license = "MIT"
+license = {text = "Apache2.0"}
 keywords = []
 authors = [
   { name = "Nicholas Mancuso", email = "nmancuso@usc.edu" },
@@ -17,7 +17,7 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Natural Language :: English",
   "Topic :: Scientific/Engineering",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -32,11 +32,11 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "jaxlib",
-  "jax",
-  "jaxtyping",
-  "equinox",
-  "lineax",
+  "jax>=0.4.13",
+  "jaxtyping>=0.2.20",
+  "equinox>=0.11.3",
+  "lineax>=0.0.4",
+  "typing_extensions>=4.5.0",
 ]
 
 [project.urls]
@@ -48,7 +48,7 @@ Source = "https://github.com/unknown/traceax"
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/sel_zero/_version.py"
+version-file = "src/traceax/_version.py"
 
 [tool.hatch.envs.default]
 dependencies = [
@@ -109,7 +109,7 @@ ignore = [
 ignore-init-module-imports = true
 
 [tool.ruff.lint.isort]
-known-first-party = ["sel_zero"]
+known-first-party = ["traceax"]
 combine-as-imports = true
 lines-after-imports = 2
 lines-between-types = 1
@@ -121,14 +121,14 @@ order-by-type = false
 [tool.ruff.lint.isort.sections]
 jax-ecosystem = ["equinox", "jax", "jaxtyping", "lineax"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 # Tests can use magic values, assertions, and relative imports
 "tests/**/*" = ["PLR2004", "S101", "TID252"]
 
 [tool.pyright]
 reportIncompatibleMethodOverride = true
 reportIncompatibleVariableOverride = false  # Incompatible with eqx.AbstractVar
-include = ["traceax", "tests"]
+include = ["src/traceax", "tests"]
 exclude = ["docs"]
 
 [tool.coverage.run]
