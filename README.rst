@@ -25,10 +25,14 @@
 Traceax
 ======
 ``traceax`` is a Python library to perform stochastic trace estimation for linear operators. Namely,
-given a square linear operator $A$, ``traceax`` provides flexible routines that estimate $tr(A)$.
+given a square linear operator $\\mathbf{A}$, ``traceax`` provides flexible routines that estimate, 
+$$\\text{trace}(\\mathbf{A}) = \\sum_i \\mathbf{A}_{ii},$$ using only matrix-vector products.
+
+``traceax`` is heavily inspired by `lineax <https://github.com/patrick-kidger/lineax>`_ as well as
+`XTrace <https://github.com/eepperly/XTrace>`_.
 
 
-|Installation|_ | |Example|_ | |Notes|_ | |Version|_ | |Support|_ | |Other Software|_
+|Installation|_ | |Example|_ | |Notes|_ | |Support|_ | |Other Software|_
 
 =================
 
@@ -104,16 +108,8 @@ Notes
 =====
 * ``traceax`` uses `JAX <https://github.com/google/jax>`_ with `Just In Time  <https://jax.readthedocs.io/en/latest/jax-101/02-jitting.html>`_ compilation to achieve high-speed computation. However, there are some `issues <https://github.com/google/jax/issues/5501>`_ for JAX with Mac M1 chip. To solve this, users need to initiate conda using `miniforge <https://github.com/conda-forge/miniforge>`_, and then install ``traceax`` using ``pip`` in the desired environment.
 
-.. _Version:
-.. |Version| replace:: **Version**
-
-Version History
-===============
-TBD
-
 .. _Support:
 .. |Support| replace:: **Support**
-
 
 Support
 =======
