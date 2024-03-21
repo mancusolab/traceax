@@ -24,7 +24,8 @@
 ======
 Traceax
 ======
-``traceax`` is a Python library to perform stochastic trace estimation of linear operators.
+``traceax`` is a Python library to perform stochastic trace estimation for linear operators. Namely,
+given a square linear operator $A$, ``traceax`` provides flexible routines that estimate, $$\text{tr}(A).$$
 
 
 |Installation|_ | |Example|_ | |Notes|_ | |Version|_ | |Support|_ | |Other Software|_
@@ -81,21 +82,20 @@ Quick Example
    # split key for estimators
    key, key1, key2, key3 = rdm.split(key, 4)
 
-   # sampler
+   # sampler; standard normal here, but other samplers are provided
    sampler = tr.NormalSampler()
 
-   # hutch estimator
+   # Hutchinson estimator
    hutch = tr.HutchinsonEstimator()
    print(hutch.compute(key1, k, Aop, sampler)) # (Array(3.4798508, dtype=float32), {})
 
-   # hutch++ estimator
+   # Hutch++ estimator
    hpp = tr.HutchPlusPlusEstimator()
    print(hpp.compute(key2, k, Aop, sampler)) # (Array(3.671408, dtype=float32), {})
 
    # XTrace estimator
    xt = tr.XTraceEstimator(scale=False)
    print(xt.compute(key3, k, Aop, sampler)) # (Array(3.1899667, dtype=float32), {'std.err': Array(0.2524434, dtype=float32)})
-
 
 .. _Notes:
 .. |Notes| replace:: **Notes**
