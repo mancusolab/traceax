@@ -14,7 +14,6 @@
 
 from abc import abstractmethod
 from typing import Any
-from typing_extensions import TypeAlias
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -24,9 +23,6 @@ from jaxtyping import Array, PRNGKeyArray
 from lineax import AbstractLinearOperator
 
 from ._samplers import AbstractSampler
-
-
-TraceEstimatorState: TypeAlias = tuple[AbstractLinearOperator, AbstractSampler]
 
 
 class AbstractTraceEstimator(eqx.Module, strict=True):

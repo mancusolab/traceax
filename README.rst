@@ -47,9 +47,55 @@ Users can download the latest repository and then use ``pip``:
 .. _Example:
 .. |Example| replace:: **Example**
 
-Get Started with Example
+Quick Example
 ========================
-TBD
+.. code:: python
+
+   import jax.numpy as jnp
+   import jax.random as rdm
+   import lineax as lx
+
+   import traceax as tr
+
+   # simulate simple symmetric matrix with exponential eigenvalue decay
+   seed = 0
+   N = 1000
+   key = rdm.PRNGKey(seed)
+   key, xkey = rdm.split(key)
+
+   X = rdm.normal(xkey, (N, N))
+   Q, R = jnp.linalg.qr(X)
+   U = jnp.power(0.7, jnp.arange(N))
+   A = (Q * U) @ Q.T
+
+   # should be numerically close
+   print(jnp.trace(A)) # 3.3333323
+   print(jnp.sum(U)) # 3.3333335
+
+   # setup linear operator
+   Aop = lx.MatrixLinearOperator(A)
+
+   # number of matrix vector operators
+   k = 10
+
+   # split key for estimators
+   key, key1, key2, key3 = rdm.split(key, 4)
+
+   # sampler
+   sampler = tr.NormalSampler()
+
+   # hutch estimator
+   hutch = tr.HutchinsonEstimator()
+   print(hutch.compute(key1, k, Aop, sampler)) # (Array(3.4798508, dtype=float32), {})
+
+   # hutch++ estimator
+   hpp = tr.HutchPlusPlusEstimator()
+   print(hpp.compute(key2, k, Aop, sampler)) # (Array(3.671408, dtype=float32), {})
+
+   # XTrace estimator
+   xt = tr.XTraceEstimator(scale=False)
+   print(xt.compute(key3, k, Aop, sampler)) # (Array(3.1899667, dtype=float32), {'std.err': Array(0.2524434, dtype=float32)})
+
 
 .. _Notes:
 .. |Notes| replace:: **Notes**
