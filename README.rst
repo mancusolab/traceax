@@ -22,7 +22,7 @@
     :target: https://github.com/pypa/hatch
 
 ======
-GiddyUp
+Traceax
 ======
 ``traceax`` is a Python library to perform stochastic trace estimation of linear operators.
 
