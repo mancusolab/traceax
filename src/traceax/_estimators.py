@@ -17,7 +17,6 @@ from typing import Any
 
 import equinox as eqx
 import jax.numpy as jnp
-import jax.random as jr
 
 from equinox import AbstractVar
 from jaxtyping import Array, PRNGKeyArray
@@ -26,31 +25,34 @@ from lineax import AbstractLinearOperator
 from ._samplers import AbstractSampler, RademacherSampler, SphereSampler
 
 
+def _get_shape(operator: AbstractLinearOperator) -> int:
+    n_in = operator.in_size()
+    n_out = operator.out_size()
+    if n_in != n_out:
+        raise ValueError(f"Trace estimation requires square linear operator. Found {(n_out, n_in)}")
+
+    return n_in
+
+
 class AbstractTraceEstimator(eqx.Module, strict=True):
     """Abstract base class for all trace estimators."""
 
     sampler: AbstractVar[AbstractSampler]
 
     @abstractmethod
-    def compute(
-        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
-    ) -> tuple[Array, dict[str, Any]]:
+    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
         ...
 
-    def __call__(
-        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
-    ) -> tuple[Array, dict[str, Any]]:
+    def __call__(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
         return self.compute(key, operator, k)
 
 
 class HutchinsonEstimator(AbstractTraceEstimator):
     sampler: AbstractSampler = RademacherSampler()
 
-    def compute(
-        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
-    ) -> tuple[Array, dict[str, Any]]:
+    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+        n = _get_shape(operator)
         # sample from proposed distribution
-        n = operator.in_size()
         samples = self.sampler(key, n, k)
 
         # project to k-dim space
@@ -65,17 +67,15 @@ class HutchinsonEstimator(AbstractTraceEstimator):
 class HutchPlusPlusEstimator(AbstractTraceEstimator):
     sampler: AbstractSampler = RademacherSampler()
 
-    def compute(
-        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
-    ) -> tuple[Array, dict[str, Any]]:
+    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
         # generate an n, k matrix X
-        n = operator.in_size()
+        n = _get_shape(operator)
         m = k // 3
 
         # split X into 2 Xs; X1 and X2, where X1 has shape 2m, where m = k/3
-        x1_key, x2_key = jr.split(key)
-        X1 = self.sampler(x1_key, n, m)
-        X2 = self.sampler(x2_key, n, m)
+        samples = self.sampler(key, n, 2 * m)
+        X1 = samples[:, :m]
+        X2 = samples[:, m:]
 
         Y = operator.mv(X1)
 
@@ -97,14 +97,12 @@ class XTraceEstimator(AbstractTraceEstimator):
     sampler: AbstractSampler = SphereSampler()
     rescale: bool = True
 
-    def compute(
-        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
-    ) -> tuple[Array, dict[str, Any]]:
-        n = operator.in_size()
+    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+        n = _get_shape(operator)
         m = k // 2
 
-        Omega = self.sampler(key, n, m)
-        Y = operator.mv(Omega)
+        samples = self.sampler(key, n, m)
+        Y = operator.mv(samples)
         Q, R = jnp.linalg.qr(Y)
 
         # solve and rescale
@@ -115,8 +113,8 @@ class XTraceEstimator(AbstractTraceEstimator):
         # working variables
         Z = operator.mv(Q)
         H = Q.T @ Z
-        W = Q.T @ Omega
-        T = Z.T @ Omega
+        W = Q.T @ samples
+        T = Z.T @ samples
         HW = H @ W
 
         SW_d = jnp.sum(S * W, axis=0)
@@ -128,18 +126,10 @@ class XTraceEstimator(AbstractTraceEstimator):
         term2 = (jnp.abs(SW_d) ** 2) * SHS_d
         term3 = jnp.conjugate(SW_d) * jnp.sum(S * (R - HW), axis=0)
 
-        re_vals = (
-            n
-            - jnp.linalg.norm(W, axis=0) ** 2
-            + jnp.abs(SW_d * jnp.linalg.norm(S, axis=0)) ** 2
-        )
+        re_vals = n - jnp.linalg.norm(W, axis=0) ** 2 + jnp.abs(SW_d * jnp.linalg.norm(S, axis=0)) ** 2
         scale = jnp.where(self.rescale, (n - m + 1) / re_vals, 1.0)
 
-        estimates = (
-            jnp.trace(H) * jnp.ones(m)
-            - SHS_d
-            + (WHW_d - TW_d + term1 + term2 + term3) * scale
-        )
+        estimates = jnp.trace(H) * jnp.ones(m) - SHS_d + (WHW_d - TW_d + term1 + term2 + term3) * scale
         trace_est = jnp.mean(estimates)
         std_err = jnp.std(estimates) / jnp.sqrt(m)
 

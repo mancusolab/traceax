@@ -91,6 +91,9 @@ all = [
   "typing",
 ]
 
+[tool.ruff]
+line-length = 120
+
 [tool.ruff.lint]
 fixable = ["ALL"]
 select = ["E", "F", "I001"]
