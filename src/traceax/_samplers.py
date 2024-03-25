@@ -15,6 +15,7 @@
 from abc import abstractmethod
 
 import equinox as eqx
+import jax.numpy as jnp
 import jax.random as rdm
 
 from jaxtyping import Array, Inexact, PRNGKeyArray
@@ -27,5 +28,28 @@ class AbstractSampler(eqx.Module, strict=True):
 
 
 class NormalSampler(AbstractSampler, strict=True):
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
+        return rdm.normal(key, (n, k))
+
+
+class SphereSampler(AbstractSampler, strict=True):
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
+        samples = rdm.normal(key, (n, k))
+        return jnp.sqrt(n) * (samples / jnp.linalg.norm(samples, axis=0))
+
+
+class ComplexNormalSampler(AbstractSampler, strict=True):
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
+        samples = rdm.normal(key, (n, k)) + 1j * rdm.normal(key, (n, k))
+        return samples / jnp.sqrt(2)
+
+
+class ComplexSphereSampler(AbstractSampler, strict=True):
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
+        samples = rdm.normal(key, (n, k)) + 1j * rdm.normal(key, (n, k))
+        return jnp.sqrt(n) * (samples / jnp.linalg.norm(samples, axis=0))
+
+
+class RademacherSampler(AbstractSampler, strict=True):
     def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
         return rdm.normal(key, (n, k))

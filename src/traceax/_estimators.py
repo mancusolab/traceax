@@ -19,37 +19,39 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 
+from equinox import AbstractVar
 from jaxtyping import Array, PRNGKeyArray
 from lineax import AbstractLinearOperator
 
-from ._samplers import AbstractSampler
+from ._samplers import AbstractSampler, RademacherSampler, SphereSampler
 
 
 class AbstractTraceEstimator(eqx.Module, strict=True):
     """Abstract base class for all trace estimators."""
 
+    sampler: AbstractVar[AbstractSampler]
+
     @abstractmethod
     def compute(
-        self,
-        key: PRNGKeyArray,
-        k: int,
-        operator: AbstractLinearOperator,
-        sampler: AbstractSampler,
+        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
     ) -> tuple[Array, dict[str, Any]]:
-        pass
+        ...
+
+    def __call__(
+        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
+    ) -> tuple[Array, dict[str, Any]]:
+        return self.compute(key, operator, k)
 
 
 class HutchinsonEstimator(AbstractTraceEstimator):
+    sampler: AbstractSampler = RademacherSampler()
+
     def compute(
-        self,
-        key: PRNGKeyArray,
-        k: int,
-        operator: AbstractLinearOperator,
-        sampler: AbstractSampler,
+        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
     ) -> tuple[Array, dict[str, Any]]:
         # sample from proposed distribution
         n = operator.in_size()
-        samples = sampler(key, n, k)
+        samples = self.sampler(key, n, k)
 
         # project to k-dim space
         projected = operator.mv(samples)
@@ -61,12 +63,10 @@ class HutchinsonEstimator(AbstractTraceEstimator):
 
 
 class HutchPlusPlusEstimator(AbstractTraceEstimator):
+    sampler: AbstractSampler = RademacherSampler()
+
     def compute(
-        self,
-        key: PRNGKeyArray,
-        k: int,
-        operator: AbstractLinearOperator,
-        sampler: AbstractSampler,
+        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
     ) -> tuple[Array, dict[str, Any]]:
         # generate an n, k matrix X
         n = operator.in_size()
@@ -74,8 +74,8 @@ class HutchPlusPlusEstimator(AbstractTraceEstimator):
 
         # split X into 2 Xs; X1 and X2, where X1 has shape 2m, where m = k/3
         x1_key, x2_key = jr.split(key)
-        X1 = sampler(x1_key, n, m)
-        X2 = sampler(x2_key, n, m)
+        X1 = self.sampler(x1_key, n, m)
+        X2 = self.sampler(x2_key, n, m)
 
         Y = operator.mv(X1)
 
@@ -94,19 +94,16 @@ class HutchPlusPlusEstimator(AbstractTraceEstimator):
 
 
 class XTraceEstimator(AbstractTraceEstimator):
-    scale: bool
+    sampler: AbstractSampler = SphereSampler()
+    rescale: bool = True
 
     def compute(
-        self,
-        key: PRNGKeyArray,
-        k: int,
-        operator: AbstractLinearOperator,
-        sampler: AbstractSampler,
+        self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int
     ) -> tuple[Array, dict[str, Any]]:
         n = operator.in_size()
         m = k // 2
 
-        Omega = sampler(key, n, m)
+        Omega = self.sampler(key, n, m)
         Y = operator.mv(Omega)
         Q, R = jnp.linalg.qr(Y)
 
@@ -114,7 +111,6 @@ class XTraceEstimator(AbstractTraceEstimator):
         S = jnp.linalg.inv(R).T
         s = jnp.sqrt(jnp.sum(S**2, axis=0))
         S = S / s
-        scale = 1.0
 
         # working variables
         Z = operator.mv(Q)
@@ -131,6 +127,13 @@ class XTraceEstimator(AbstractTraceEstimator):
         term1 = SW_d * jnp.sum((T - H.T @ W) * S, axis=0)
         term2 = (jnp.abs(SW_d) ** 2) * SHS_d
         term3 = jnp.conjugate(SW_d) * jnp.sum(S * (R - HW), axis=0)
+
+        re_vals = (
+            n
+            - jnp.linalg.norm(W, axis=0) ** 2
+            + jnp.abs(SW_d * jnp.linalg.norm(S, axis=0)) ** 2
+        )
+        scale = jnp.where(self.rescale, (n - m + 1) / re_vals, 1.0)
 
         estimates = (
             jnp.trace(H) * jnp.ones(m)
