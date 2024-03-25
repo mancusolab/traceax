@@ -25,7 +25,7 @@
 Traceax
 ======
 ``traceax`` is a Python library to perform stochastic trace estimation for linear operators. Namely,
-given a square linear operator $\\mathbf{A}$, ``traceax`` provides flexible routines that estimate, 
+given a square linear operator $\\mathbf{A}$, ``traceax`` provides flexible routines that estimate,
 $$\\text{trace}(\\mathbf{A}) = \\sum_i \\mathbf{A}_{ii},$$ using only matrix-vector products.
 
 ``traceax`` is heavily inspired by `lineax <https://github.com/patrick-kidger/lineax>`_ as well as
@@ -86,20 +86,17 @@ Quick Example
    # split key for estimators
    key, key1, key2, key3 = rdm.split(key, 4)
 
-   # sampler; standard normal here, but other samplers are provided
-   sampler = tr.NormalSampler()
-
-   # Hutchinson estimator
+   # Hutchinson estimator; default samples Rademacher {-1,+1}
    hutch = tr.HutchinsonEstimator()
-   print(hutch.compute(key1, k, Aop, sampler)) # (Array(3.4798508, dtype=float32), {})
+   print(hutch.compute(key1, Aop, k)) # (Array(3.4798508, dtype=float32), {})
 
-   # Hutch++ estimator
+   # Hutch++ estimator; default samples Rademacher {-1,+1}
    hpp = tr.HutchPlusPlusEstimator()
-   print(hpp.compute(key2, k, Aop, sampler)) # (Array(3.671408, dtype=float32), {})
+   print(hpp.compute(key2, Aop, k)) # (Array(3.671408, dtype=float32), {})
 
-   # XTrace estimator
-   xt = tr.XTraceEstimator(scale=False)
-   print(xt.compute(key3, k, Aop, sampler)) # (Array(3.1899667, dtype=float32), {'std.err': Array(0.2524434, dtype=float32)})
+   # XTrace estimator; default samples uniformly on n-Sphere
+   xt = tr.XTraceEstimator()
+   print(xt.compute(key3, Aop, k)) # (Array(3.1775048, dtype=float32), {'std.err': Array(0.24185811, dtype=float32)})
 
 .. _Notes:
 .. |Notes| replace:: **Notes**
