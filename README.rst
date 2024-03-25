@@ -88,11 +88,11 @@ Quick Example
 
    # Hutchinson estimator; default samples Rademacher {-1,+1}
    hutch = tr.HutchinsonEstimator()
-   print(hutch.compute(key1, Aop, k)) # (Array(3.4798508, dtype=float32), {})
+   print(hutch.compute(key1, Aop, k)) # (Array(3.7297516, dtype=float32), {})
 
    # Hutch++ estimator; default samples Rademacher {-1,+1}
    hpp = tr.HutchPlusPlusEstimator()
-   print(hpp.compute(key2, Aop, k)) # (Array(3.671408, dtype=float32), {})
+   print(hpp.compute(key2, Aop, k)) # (Array(3.9572973, dtype=float32), {})
 
    # XTrace estimator; default samples uniformly on n-Sphere
    xt = tr.XTraceEstimator()

@@ -52,4 +52,4 @@ class ComplexSphereSampler(AbstractSampler, strict=True):
 
 class RademacherSampler(AbstractSampler, strict=True):
     def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
-        return rdm.normal(key, (n, k))
+        return rdm.rademacher(key, (n, k))
