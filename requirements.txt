@@ -1,0 +1,15 @@
+equinox                         # traceax uses this, but we also preload for easier doc building
+jax[cpu]                        # core dependencies
+jaxtyping                       # traceax uses this, but we also preload for easier doc building
+jinja2                          # necessary for mkdocs and mkdocs ecosystem
+lineax                          # traceax uses this, but we also preload for easier doc building
+mkdocs                          # Main documentation generator.
+mkdocs-material                 # Theme
+mkdocs_include_exclude_files    # Allow for customising which files get included
+mkdocstrings[python]            # Autogenerate documentation from docstrings.
+mknotebooks                     # Turn Jupyter Lab notebooks into webpages.
+pydantic                        # data models
+pygments                        # syntax highlighting
+pymdown-extensions              # Markdown extensions e.g. to handle LaTeX.
+# Install latest version of our dependencies
+typing_extensions               # traceax uses this, but we also preload for easier doc building
