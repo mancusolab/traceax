@@ -35,7 +35,7 @@ def _get_shape(operator: AbstractLinearOperator) -> int:
 
 
 class AbstractTraceEstimator(eqx.Module, strict=True):
-    """Abstract base class for all trace estimators."""
+    r"""Abstract base class for all trace estimators."""
 
     sampler: AbstractVar[AbstractSampler]
 
@@ -48,7 +48,7 @@ class AbstractTraceEstimator(eqx.Module, strict=True):
 
 
 class HutchinsonEstimator(AbstractTraceEstimator):
-    """Girard-Hutchinson Trace Estimator:
+    r"""Girard-Hutchinson Trace Estimator:
 
     $\mathbb{E}[\omega^T \mathbf{A} \omega] = \\text{trace}(\mathbf{A})$,
     where $\mathbb{E}[\omega] = 0$ and $\mathbb{E}[\omega \omega^T] = \mathbf{I}$.
@@ -81,7 +81,7 @@ HutchinsonEstimator.__init__.__doc__ = r"""**Arguments:**
 
 
 class HutchPlusPlusEstimator(AbstractTraceEstimator):
-    """Hutch++ Trace Estimator:
+    r"""Hutch++ Trace Estimator:
 
     Let $\hat{\mathbf{A}} := \mathbf{Q}\mathbf{Q}^* \mathbf{A}$ be the the _low-rank approximation_
     to $\mathbf{A}$, where $\mathbf{Q}$ is the orthonormal basis of $\mathbf{A} \Omega$, for
@@ -133,7 +133,7 @@ HutchPlusPlusEstimator.__init__.__doc__ = r"""**Arguments:**
 
 
 class XTraceEstimator(AbstractTraceEstimator):
-    """ """
+    r""" """
 
     sampler: AbstractSampler = SphereSampler()
     rescale: bool = True
