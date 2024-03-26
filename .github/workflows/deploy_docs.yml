@@ -37,3 +37,6 @@ jobs:
         with:
           name: docs
           path: site  # where `mkdocs build` puts the built site
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
