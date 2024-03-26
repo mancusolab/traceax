@@ -50,7 +50,7 @@ class AbstractTraceEstimator(eqx.Module, strict=True):
 class HutchinsonEstimator(AbstractTraceEstimator):
     r"""Girard-Hutchinson Trace Estimator:
 
-    $\mathbb{E}[\omega^T \mathbf{A} \omega] = \\text{trace}(\mathbf{A})$,
+    $\mathbb{E}[\omega^T \mathbf{A} \omega] = \text{trace}(\mathbf{A})$,
     where $\mathbb{E}[\omega] = 0$ and $\mathbb{E}[\omega \omega^T] = \mathbf{I}$.
 
     !!! info
@@ -88,8 +88,8 @@ class HutchPlusPlusEstimator(AbstractTraceEstimator):
     $\Omega = [\omega_1, \dotsc, \omega_k]$.
 
     Hutch++ improves upon Girard-Hutchinson estimator by including the trace of the residuals. Namely,
-    Hutch++ estimates $\\text{trace}(\mathbf{A})$ as
-    $\\text{trace}(\hat{\mathbf{A}}) - \\text{trace}(\mathbf{A} - \hat{\mathbf{A}})$.
+    Hutch++ estimates $\text{trace}(\mathbf{A})$ as
+    $\text{trace}(\hat{\mathbf{A}}) - \text{trace}(\mathbf{A} - \hat{\mathbf{A}})$.
 
     As with the Girard-Hutchinson estimator, it requires
     $\mathbb{E}[\omega] = 0$ and $\mathbb{E}[\omega \omega^T] = \mathbf{I}$.
