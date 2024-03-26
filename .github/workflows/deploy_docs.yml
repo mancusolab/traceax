@@ -5,11 +5,6 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  id-token: write
-  pages: write
-
 jobs:
   build:
     strategy:
@@ -43,5 +38,17 @@ jobs:
           name: docs
           path: site  # where `mkdocs build` puts the built site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
+    permissions:
+      pages: write      # to deploy to Pages
+      id-token: write   # to verify the deployment originates from an appropriate source
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+        id: deployment
+        uses: actions/deploy-pages@v3
