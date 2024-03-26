@@ -41,6 +41,9 @@ jobs:
           mkdocs build
           mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
 
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v3
+
       - name: Upload docs
         uses: actions/upload-artifact@v4
         with:
