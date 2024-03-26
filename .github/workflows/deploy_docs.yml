@@ -18,6 +18,9 @@ jobs:
         python-version: [ 3.11 ]
         os: [ ubuntu-latest ]
     runs-on: ${{ matrix.os }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.pages_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
