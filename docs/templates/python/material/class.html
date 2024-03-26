@@ -1,0 +1,20 @@
+{% extends "_base/class.html" %}
+{% block heading scoped %}
+{% if config.show_bases and class.bases %}
+  <code>{{ class_name }}(
+    {%- for expression in class.bases -%}
+      {% if loop.last %}
+        {% include "expression.html" with context %})</code>
+      {% else %}
+        {% include "expression.html" with context %},
+      {% endif %}
+    {% endfor %}
+{% else %}
+  <code>{{ class_name }}</code>
+{% endif %}
+
+{% endblock heading %}
+{% block bases scoped %}
+    {% if config.show_bases and class.bases %}
+    {% endif %}
+{% endblock bases %}

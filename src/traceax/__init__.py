@@ -22,7 +22,11 @@ from ._estimators import (
 )
 from ._samplers import (
     AbstractSampler as AbstractSampler,
+    ComplexNormalSampler as ComplexNormalSampler,
+    ComplexSphereSampler as ComplexSphereSampler,
     NormalSampler as NormalSampler,
+    RademacherSampler as RademacherSampler,
+    SphereSampler as SphereSampler,
 )
 
 

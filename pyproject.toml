@@ -5,11 +5,16 @@ build-backend = "hatchling.build"
 [project]
 name = "traceax"
 dynamic = ["version"]
-description = ""
+description = "Stochastic trace estimation in JAX, Lineax, and Equinox"
 readme = "README.rst"
 requires-python = ">=3.9"
 license = {text = "Apache2.0"}
-keywords = []
+keywords = [
+  "jax",
+  "trace-estimation",
+  "statistics",
+  "machine-learning",
+]
 authors = [
   { name = "Nicholas Mancuso", email = "nmancuso@usc.edu" },
 ]
@@ -40,9 +45,9 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/unknown/traceax#readme"
-Issues = "https://github.com/unknown/traceax/issues"
-Source = "https://github.com/unknown/traceax"
+Documentation = "https://github.com/mancusolab/traceax#readme"
+Issues = "https://github.com/mancusolab/traceax/issues"
+Source = "https://github.com/mancusolab/traceax"
 
 [tool.hatch.version]
 source = "vcs"
@@ -138,9 +143,7 @@ exclude = ["docs"]
 source_pkgs = ["traceax", "tests"]
 branch = true
 parallel = true
-omit = [
-  "src/traceax/__about__.py",
-]
+omit = []
 
 [tool.coverage.paths]
 traceax = ["src/traceax", "*/traceax/src/traceax"]

@@ -48,6 +48,16 @@ class AbstractTraceEstimator(eqx.Module, strict=True):
 
 
 class HutchinsonEstimator(AbstractTraceEstimator):
+    """Girard-Hutchinson Trace Estimator:
+
+    $\mathbb{E}[\omega^T \mathbf{A} \omega] = \\text{trace}(\mathbf{A})$,
+    where $\mathbb{E}[\omega] = 0$ and $\mathbb{E}[\omega \omega^T] = \mathbf{I}$.
+
+    !!! info
+
+
+    """
+
     sampler: AbstractSampler = RademacherSampler()
 
     def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
@@ -64,7 +74,30 @@ class HutchinsonEstimator(AbstractTraceEstimator):
         return trace_est, {}
 
 
+HutchinsonEstimator.__init__.__doc__ = r"""**Arguments:**
+
+- `sampler`: The sampling distribution for $\omega$. Default is [`traceax.RademacherSampler`][].
+"""
+
+
 class HutchPlusPlusEstimator(AbstractTraceEstimator):
+    """Hutch++ Trace Estimator:
+
+    Let $\hat{\mathbf{A}} := \mathbf{Q}\mathbf{Q}^* \mathbf{A}$ be the the _low-rank approximation_
+    to $\mathbf{A}$, where $\mathbf{Q}$ is the orthonormal basis of $\mathbf{A} \Omega$, for
+    $\Omega = [\omega_1, \dotsc, \omega_k]$.
+
+    Hutch++ improves upon Girard-Hutchinson estimator by including the trace of the residuals. Namely,
+    Hutch++ estimates $\\text{trace}(\mathbf{A})$ as
+    $\\text{trace}(\hat{\mathbf{A}}) - \\text{trace}(\mathbf{A} - \hat{\mathbf{A}})$.
+
+    As with the Girard-Hutchinson estimator, it requires
+    $\mathbb{E}[\omega] = 0$ and $\mathbb{E}[\omega \omega^T] = \mathbf{I}$.
+
+    !!! info
+
+    """
+
     sampler: AbstractSampler = RademacherSampler()
 
     def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
@@ -93,7 +126,15 @@ class HutchPlusPlusEstimator(AbstractTraceEstimator):
         return trace_est, {}
 
 
+HutchPlusPlusEstimator.__init__.__doc__ = r"""**Arguments:**
+
+- `sampler`: The sampling distribution for $\omega$. Default is [`traceax.RademacherSampler`][].
+"""
+
+
 class XTraceEstimator(AbstractTraceEstimator):
+    """ """
+
     sampler: AbstractSampler = SphereSampler()
     rescale: bool = True
 
@@ -134,3 +175,10 @@ class XTraceEstimator(AbstractTraceEstimator):
         std_err = jnp.std(estimates) / jnp.sqrt(m)
 
         return trace_est, {"std.err": std_err}
+
+
+XTraceEstimator.__init__.__doc__ = r"""**Arguments:**
+
+- `sampler`: The sampling distribution for $\omega$. Default is [`traceax.SphereSampler`][].
+- `rescale`: Whether to rescale samples for _improved_ XTrace estimator (see Notes).
+"""
