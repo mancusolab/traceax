@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "traceax"
 dynamic = ["version"]
 description = "Stochastic trace estimation in JAX, Lineax, and Equinox"
-readme = "README.rst"
+readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "Apache2.0"}
 keywords = [
