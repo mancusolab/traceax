@@ -19,7 +19,6 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
   [**Installation**](#installation)
   | [**Example**](#get-started-with-example)
   | [**Notes**](#notes)
-  | [**Version**](#version-history)
   | [**Support**](#support)
   | [**Other Software**](#other-software)
 
