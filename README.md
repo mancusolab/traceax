@@ -95,7 +95,8 @@ print(xt.compute(key3, Aop, k)) # (Array(3.1775048, dtype=float32), {'std.err': 
 
 Please report any bugs or feature requests in the [Issue
 Tracker](https://github.com/mancusolab/traceax/issues). If users have
-any questions or comments, please contact Nicholas Mancuso (<nmancuso@usc.edu>).
+any questions or comments, please contact Linda Serafin (<lserafin@usc.edu>) or
+Nicholas Mancuso (<nmancuso@usc.edu>).
 
 ## Other Software
 
