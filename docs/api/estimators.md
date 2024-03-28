@@ -11,8 +11,6 @@ TBD
             - compute
             - __call__
 
-## Girard-Hutchinson and Hutch++ Estimators
-
 ::: traceax.HutchinsonEstimator
     options:
         members:
@@ -26,9 +24,6 @@ TBD
         - __init__
 
 ---
-
-
-## Exchangeable Stochastic Trace Estimators
 
 ::: traceax.XTraceEstimator
     options:
