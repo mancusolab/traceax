@@ -14,7 +14,6 @@ simple abstract class definition, [`traceax.AbstractSampler`][] using that subcl
             members:
             - __call__
 
-## Floating-point Samplers
 
 ::: traceax.NormalSampler
 
@@ -25,11 +24,3 @@ simple abstract class definition, [`traceax.AbstractSampler`][] using that subcl
 ---
 
 ::: traceax.RademacherSampler
-
-
-## Complex-value Samplers
-::: traceax.ComplexNormalSampler
-
----
-
-::: traceax.ComplexSphereSampler
