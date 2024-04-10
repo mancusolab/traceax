@@ -56,3 +56,9 @@ differentiable and performant [JAX](https://github.com/google/jax) based numeric
     options:
         members:
         - __init__
+---
+
+::: traceax.XNysTraceEstimator
+    options:
+        members:
+        - __init__

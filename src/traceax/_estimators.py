@@ -115,7 +115,7 @@ HutchinsonEstimator.__init__.__doc__ = r"""**Arguments:**
 class HutchPlusPlusEstimator(AbstractTraceEstimator):
     r"""Hutch++ Trace Estimator:
 
-    Let $\hat{\mathbf{A}} := \mathbf{Q}\mathbf{Q}^* \mathbf{A}$ be the the _low-rank approximation_
+    Let $\hat{\mathbf{A}} := \mathbf{Q}\mathbf{Q}^* \mathbf{A}$ be the a _low-rank approximation_
     to $\mathbf{A}$, where $\mathbf{Q}$ is the orthonormal basis of $\mathbf{A} \Omega$, for
     $\Omega = [\omega_1, \dotsc, \omega_k]$.
 
@@ -235,6 +235,21 @@ XTraceEstimator.__init__.__doc__ = r"""**Arguments:**
 
 
 class XNysTraceEstimator(AbstractTraceEstimator):
+    r"""XNysTrace Trace Estimator:
+
+    XNysTrace improves upon XTrace estimator when $\mathbf{A}$ is (negative-) positive-semidefinite, by
+    performing a [Nyström approximation](https://en.wikipedia.org/wiki/Low-rank_matrix_approximations#Nystr%C3%B6m_approximation),
+    rather than a randomized SVD (i.e., random projection followed by QR decomposition).
+
+    Like, [`traceax.XTraceEstimator`][], the *improved* XNysTrace algorithm (i.e. `improved = True`), ensures
+    that test-vectors are orthogonalized against the low rank approximation and renormalized.
+    This improved XNysTrace approach may provide better empirical results compared with the non-orthogonalized version.
+
+    As with the Girard-Hutchinson estimator, it requires
+    $\mathbb{E}[\omega] = 0$ and $\mathbb{E}[\omega \omega^T] = \mathbf{I}$.
+
+    """
+
     sampler: AbstractSampler = SphereSampler()
     improved: bool = True
 
@@ -282,3 +297,11 @@ class XNysTraceEstimator(AbstractTraceEstimator):
         trace_est = jnp.where(is_nsd, -trace_est, trace_est)
 
         return trace_est, {"std.err": std_err}
+
+
+XNysTraceEstimator.__init__.__doc__ = r"""**Arguments:**
+
+- `sampler`: the sampling distribution for $\omega$. Default is [`traceax.SphereSampler`][].
+- `improved`: whether to use the *improved* XNysTrace estimator, which rescales predicted samples.
+    Default is `True` (see Notes).
+"""
