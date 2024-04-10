@@ -55,11 +55,11 @@ U = jnp.power(0.7, jnp.arange(N))
 A = (Q * U) @ Q.T
 
 # should be numerically close
-print(jnp.trace(A)) # 3.3333323
-print(jnp.sum(U)) # 3.3333335
+print(jnp.trace(A))  # 3.3333323
+print(jnp.sum(U))  # 3.3333335
 
 # setup linear operator
-Aop = lx.MatrixLinearOperator(A)
+operator = lx.MatrixLinearOperator(A)
 
 # number of matrix vector operators
 k = 10
@@ -69,15 +69,15 @@ key, key1, key2, key3 = rdm.split(key, 4)
 
 # Hutchinson estimator; default samples Rademacher {-1,+1}
 hutch = tr.HutchinsonEstimator()
-print(hutch.compute(key1, Aop, k)) # (Array(3.7297516, dtype=float32), {})
+print(hutch.estimate(key1, operator, k))  # (Array(3.7297516, dtype=float32), {})
 
 # Hutch++ estimator; default samples Rademacher {-1,+1}
 hpp = tr.HutchPlusPlusEstimator()
-print(hpp.compute(key2, Aop, k)) # (Array(3.9572973, dtype=float32), {})
+print(hpp.estimate(key2, operator, k))  # (Array(3.9572973, dtype=float32), {})
 
 # XTrace estimator; default samples uniformly on n-Sphere
 xt = tr.XTraceEstimator()
-print(xt.compute(key3, Aop, k)) # (Array(3.1775048, dtype=float32), {'std.err': Array(0.24185811, dtype=float32)})
+print(xt.estimate(key3, operator, k))  # (Array(3.1775048, dtype=float32), {'std.err': Array(0.24185811, dtype=float32)})
 ```
 
 ## Notes

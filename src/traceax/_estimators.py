@@ -25,13 +25,16 @@ from lineax import AbstractLinearOperator
 from ._samplers import AbstractSampler, RademacherSampler, SphereSampler
 
 
-def _get_shape(operator: AbstractLinearOperator) -> int:
+def _check_shapes(operator: AbstractLinearOperator, k: int) -> tuple[int, int]:
     n_in = operator.in_size()
     n_out = operator.out_size()
     if n_in != n_out:
-        raise ValueError(f"Trace estimation requires square linear operator. Found {(n_out, n_in)}")
+        raise ValueError(f"Trace estimation requires square linear operator. Found {(n_out, n_in)}.")
 
-    return n_in
+    if k < 1:
+        raise ValueError(f"Trace estimation requires positive number of matvecs. Found {k}.")
+
+    return n_in, k
 
 
 class AbstractTraceEstimator(eqx.Module, strict=True):
@@ -40,11 +43,37 @@ class AbstractTraceEstimator(eqx.Module, strict=True):
     sampler: AbstractVar[AbstractSampler]
 
     @abstractmethod
-    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+    def estimate(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+        """Estimate the trace of `operator`.
+
+        !!! Example
+
+            ```python
+            key = jax.random.PRNGKey(...)
+            operator = lx.MatrixLinearOperator(...)
+            result = hutch.compute(key, operator, k=10)
+            #  or
+            result = hutch(key, operator, k=10)
+            ```
+
+        **Arguments:**
+
+        - `key`: the PRNG key used as the random key for sampling.
+        - `operator`: the (square) linear operator for which the trace is to be estimated.
+        - `k`: the number of matrix vector operations to perform for trace estimation.
+
+        **Returns:**
+
+        A two-tuple of:
+
+        - The trace estimate.
+        - A dictionary of any extra statistics above the trace, e.g., the standard error.
+        """
         ...
 
     def __call__(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
-        return self.compute(key, operator, k)
+        """An alias for `estimate`."""
+        return self.estimate(key, operator, k)
 
 
 class HutchinsonEstimator(AbstractTraceEstimator):
@@ -57,8 +86,8 @@ class HutchinsonEstimator(AbstractTraceEstimator):
 
     sampler: AbstractSampler = RademacherSampler()
 
-    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
-        n = _get_shape(operator)
+    def estimate(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+        n, k = _check_shapes(operator, k)
         # sample from proposed distribution
         samples = self.sampler(key, n, k)
 
@@ -95,9 +124,9 @@ class HutchPlusPlusEstimator(AbstractTraceEstimator):
 
     sampler: AbstractSampler = RademacherSampler()
 
-    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+    def estimate(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
         # generate an n, k matrix X
-        n = _get_shape(operator)
+        n, k = _check_shapes(operator, k)
         m = k // 3
 
         # split X into 2 Xs; X1 and X2, where X1 has shape 2m, where m = k/3
@@ -130,15 +159,28 @@ HutchPlusPlusEstimator.__init__.__doc__ = r"""**Arguments:**
 class XTraceEstimator(AbstractTraceEstimator):
     r"""XTrace Trace Estimator:
 
-    TBD.
+    Let $\hat{\mathbf{A}} := \mathbf{Q}\mathbf{Q}^* \mathbf{A}$ be the the _low-rank approximation_
+    to $\mathbf{A}$, where $\mathbf{Q}$ is the orthonormal basis of $\mathbf{A} \Omega$, for
+    $\Omega = [\omega_1, \dotsc, \omega_k]$.
+
+    XTrace improves upon Hutch++ estimator by enforcing *exchangeability* of sampled test-vectors,
+    to construct a symmetric estimation function with lower variance.
+
+    Additionally, the *improved* XTrace algorithm (i.e. `improved = True`), ensures that test-vectors
+    are orthogonalized against the low rank approximation $\mathbf{Q}\mathbf{Q}^* \mathbf{A}$ and
+    renormalized. This improved XTrace approach may provide better empirical results compared with
+    the non-orthogonalized version.
+
+    As with the Girard-Hutchinson estimator, it requires
+    $\mathbb{E}[\omega] = 0$ and $\mathbb{E}[\omega \omega^T] = \mathbf{I}$.
 
     """
 
     sampler: AbstractSampler = SphereSampler()
     improved: bool = True
 
-    def compute(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
-        n = _get_shape(operator)
+    def estimate(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+        n, k = _check_shapes(operator, k)
         m = k // 2
 
         samples = self.sampler(key, n, m)
@@ -178,7 +220,7 @@ class XTraceEstimator(AbstractTraceEstimator):
 
 XTraceEstimator.__init__.__doc__ = r"""**Arguments:**
 
-- `sampler`: The sampling distribution for $\omega$. Default is [`traceax.SphereSampler`][].
-- `improved`: Whether to use the _improved_ XTrace estimator, which rescales predicted samples.
+- `sampler`: the sampling distribution for $\omega$. Default is [`traceax.SphereSampler`][].
+- `improved`: whether to use the *improved* XTrace estimator, which rescales predicted samples.
     Default is `True` (see Notes).
 """
