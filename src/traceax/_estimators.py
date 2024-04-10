@@ -17,10 +17,11 @@ from typing import Any
 
 import equinox as eqx
 import jax.numpy as jnp
+import jax.scipy as jsp
 
 from equinox import AbstractVar
 from jaxtyping import Array, PRNGKeyArray
-from lineax import AbstractLinearOperator
+from lineax import AbstractLinearOperator, is_negative_semidefinite, is_positive_semidefinite
 
 from ._samplers import AbstractSampler, RademacherSampler, SphereSampler
 
@@ -189,7 +190,7 @@ class XTraceEstimator(AbstractTraceEstimator):
 
         # solve and rescale
         S = jnp.linalg.inv(R).T
-        s = jnp.sqrt(jnp.sum(S**2, axis=0))
+        s = jnp.linalg.norm(S, axis=0)
         S = S / s
 
         # working variables
@@ -224,3 +225,55 @@ XTraceEstimator.__init__.__doc__ = r"""**Arguments:**
 - `improved`: whether to use the *improved* XTrace estimator, which rescales predicted samples.
     Default is `True` (see Notes).
 """
+
+
+class XNysTraceEstimator(AbstractTraceEstimator):
+    sampler: AbstractSampler = SphereSampler()
+    improved: bool = True
+
+    def estimate(self, key: PRNGKeyArray, operator: AbstractLinearOperator, k: int) -> tuple[Array, dict[str, Any]]:
+        is_nsd = is_negative_semidefinite(operator)
+        if not (is_positive_semidefinite(operator) | is_nsd):
+            raise ValueError("`XNysTraceEstimator` may only be used for positive or negative definite linear operators")
+        if is_nsd:
+            operator = -operator
+
+        n, k = _check_shapes(operator, k)
+        samples = self.sampler(key, n, k)
+        Y = operator.mv(samples)
+
+        # shift for numerical issues
+        nu = jnp.finfo(Y.dtype).eps * jnp.linalg.norm(Y, "fro") / jnp.sqrt(n)
+        Y = Y + samples * nu
+        Q, R = jnp.linalg.qr(Y)
+
+        # compute and symmetrize H, then take cholesky factor
+        H = samples.T @ Y
+        C = jnp.linalg.cholesky(0.5 * (H + H.T))
+        B = jsp.linalg.solve_triangular(C.T, R.T).T
+
+        # if improved == True
+        Qs, Rs = jnp.linalg.qr(samples)
+        Ws = Qs.T @ samples
+
+        # solve and rescale
+        S = jnp.linalg.inv(Rs)
+        s = jnp.linalg.norm(S, axis=0)
+        S = S / s
+        re_vals = (
+            n - jnp.linalg.norm(Ws, axis=0) ** 2 + jnp.abs(jnp.sum(S * Ws, axis=0) * jnp.linalg.norm(S, axis=0) ** 2)
+        )
+        scale = jnp.where(self.improved, (n - k + 1) / re_vals, 1.0)
+
+        W = Q.T @ samples
+        S = jsp.linalg.solve_triangular(C, B.T, lower=True).T / jnp.sqrt(jnp.diag(jnp.linalg.inv(H)))
+        dSW = jnp.sum(S * W, axis=0)
+
+        estimates = (
+            jnp.linalg.norm(B, "fro") ** 2 - jnp.linalg.norm(S, axis=0) ** 2 + (jnp.abs(dSW) ** 2) * scale - nu * n
+        )
+        trace_est = jnp.mean(estimates)
+        std_err = jnp.std(estimates) / jnp.sqrt(k)
+        trace_est = jnp.where(is_nsd, -trace_est, trace_est)
+
+        return trace_est, {"std.err": std_err}

@@ -18,6 +18,7 @@ from ._estimators import (
     AbstractTraceEstimator as AbstractTraceEstimator,
     HutchinsonEstimator as HutchinsonEstimator,
     HutchPlusPlusEstimator as HutchPlusPlusEstimator,
+    XNysTraceEstimator as XNysTraceEstimator,
     XTraceEstimator as XTraceEstimator,
 )
 from ._samplers import (
