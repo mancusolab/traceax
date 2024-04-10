@@ -20,6 +20,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 
 from equinox import AbstractVar
+from jax.numpy.linalg import norm
 from jaxtyping import Array, PRNGKeyArray
 from lineax import AbstractLinearOperator, is_negative_semidefinite, is_positive_semidefinite
 
@@ -36,6 +37,10 @@ def _check_shapes(operator: AbstractLinearOperator, k: int) -> tuple[int, int]:
         raise ValueError(f"Trace estimation requires positive number of matvecs. Found {k}.")
 
     return n_in, k
+
+
+def _get_scale(W: Array, D: Array, n: int, k: int) -> Array:
+    return (n - k + 1) / (n - norm(W, axis=0) ** 2 + jnp.abs(D) ** 2)
 
 
 class AbstractTraceEstimator(eqx.Module, strict=True):
@@ -190,7 +195,7 @@ class XTraceEstimator(AbstractTraceEstimator):
 
         # solve and rescale
         S = jnp.linalg.inv(R).T
-        s = jnp.linalg.norm(S, axis=0)
+        s = norm(S, axis=0)
         S = S / s
 
         # working variables
@@ -209,8 +214,10 @@ class XTraceEstimator(AbstractTraceEstimator):
         term2 = (jnp.abs(SW_d) ** 2) * SHS_d
         term3 = jnp.conjugate(SW_d) * jnp.sum(S * (R - HW), axis=0)
 
-        re_vals = n - jnp.linalg.norm(W, axis=0) ** 2 + jnp.abs(SW_d * jnp.linalg.norm(S, axis=0)) ** 2
-        scale = jnp.where(self.improved, (n - m + 1) / re_vals, 1.0)
+        if self.improved:
+            scale = _get_scale(W, SW_d, n, k)
+        else:
+            scale = 1
 
         estimates = jnp.trace(H) * jnp.ones(m) - SHS_d + (WHW_d - TW_d + term1 + term2 + term3) * scale
         trace_est = jnp.mean(estimates)
@@ -243,35 +250,33 @@ class XNysTraceEstimator(AbstractTraceEstimator):
         Y = operator.mv(samples)
 
         # shift for numerical issues
-        nu = jnp.finfo(Y.dtype).eps * jnp.linalg.norm(Y, "fro") / jnp.sqrt(n)
+        nu = jnp.finfo(Y.dtype).eps * norm(Y, "fro") / jnp.sqrt(n)
         Y = Y + samples * nu
         Q, R = jnp.linalg.qr(Y)
 
         # compute and symmetrize H, then take cholesky factor
         H = samples.T @ Y
-        C = jnp.linalg.cholesky(0.5 * (H + H.T))
-        B = jsp.linalg.solve_triangular(C.T, R.T).T
+        C = jnp.linalg.cholesky(0.5 * (H + H.T)).T
+        B = jsp.linalg.solve_triangular(C.T, R.T, lower=True).T
 
         # if improved == True
         Qs, Rs = jnp.linalg.qr(samples)
         Ws = Qs.T @ samples
 
         # solve and rescale
-        S = jnp.linalg.inv(Rs)
-        s = jnp.linalg.norm(S, axis=0)
-        S = S / s
-        re_vals = (
-            n - jnp.linalg.norm(Ws, axis=0) ** 2 + jnp.abs(jnp.sum(S * Ws, axis=0) * jnp.linalg.norm(S, axis=0) ** 2)
-        )
-        scale = jnp.where(self.improved, (n - k + 1) / re_vals, 1.0)
+        if self.improved:
+            S = jnp.linalg.inv(Rs).T
+            s = norm(S, axis=0)
+            S = S / s
+            scale = _get_scale(Ws, jnp.sum(S * Ws, axis=0), n, k)
+        else:
+            scale = 1
 
         W = Q.T @ samples
-        S = jsp.linalg.solve_triangular(C, B.T, lower=True).T / jnp.sqrt(jnp.diag(jnp.linalg.inv(H)))
+        S = jsp.linalg.solve_triangular(C, B.T).T / jnp.sqrt(jnp.diag(jnp.linalg.inv(H)))
         dSW = jnp.sum(S * W, axis=0)
 
-        estimates = (
-            jnp.linalg.norm(B, "fro") ** 2 - jnp.linalg.norm(S, axis=0) ** 2 + (jnp.abs(dSW) ** 2) * scale - nu * n
-        )
+        estimates = norm(B, "fro") ** 2 - norm(S, axis=0) ** 2 + (jnp.abs(dSW) ** 2) * scale - nu * n
         trace_est = jnp.mean(estimates)
         std_err = jnp.std(estimates) / jnp.sqrt(k)
         trace_est = jnp.where(is_nsd, -trace_est, trace_est)
