@@ -87,7 +87,7 @@ plugins:
                     extensions:
                     - pydantic: {schema: true}
                     - docs/scripts/extension.py:DynamicDocstrings:
-                        paths: [ traceax._estimators ]
+                        paths: [ traceax._estimators, traceax._samplers ]
                     # general options
                     allow_inspection: true
                     show_bases: true

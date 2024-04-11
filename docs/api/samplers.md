@@ -16,11 +16,20 @@ simple abstract class definition, [`traceax.AbstractSampler`][] using that subcl
 
 
 ::: traceax.NormalSampler
+    options:
+        members:
+        - __init__
 
 ---
 
 ::: traceax.SphereSampler
+    options:
+        members:
+        - __init__
 
 ---
 
 ::: traceax.RademacherSampler
+    options:
+        members:
+        - __init__

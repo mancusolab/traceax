@@ -45,7 +45,6 @@ class AbstractSampler(eqx.Module, strict=True):
         - `key`: a jax PRNG key used as the random key.
         - `n`: the size of the leading dimension.
         - `k`: the size of the trailing dimension.
-        - `dtype`: the numerical type of generated samples (e.g., `float`, `int`, `complex`, etc.)
 
         **Returns**:
 
@@ -73,6 +72,12 @@ class NormalSampler(AbstractSampler, strict=True):
         return rdm.normal(key, (n, k), self.dtype)
 
 
+NormalSampler.__init__.__doc__ = r"""**Arguments:**
+
+- `dtype`: numeric representation for sampled test-vectors. Default is `float`.
+"""
+
+
 class SphereSampler(AbstractSampler, strict=True):
     r"""Sphere distribution sampler.
 
@@ -96,10 +101,19 @@ class SphereSampler(AbstractSampler, strict=True):
         return jnp.sqrt(n) * (samples / jnp.linalg.norm(samples, axis=0))
 
 
+SphereSampler.__init__.__doc__ = r"""**Arguments:**
+
+- `dtype`: numeric representation for sampled test-vectors. Default is `float`.
+"""
+
+
 class RademacherSampler(AbstractSampler, strict=True):
     r"""Rademacher distribution sampler.
 
     Generates samples $X_{ij} \sim \mathcal{U}(-1, +1)$ for $i \in [n]$ and $j \in [k]$.
+
+    !!! Note
+        Supports integer, float, and complex-valued types.
     """
 
     dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=int)
@@ -110,3 +124,9 @@ class RademacherSampler(AbstractSampler, strict=True):
 
     def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Num[Array, "n k"]:
         return rdm.rademacher(key, (n, k), self.dtype)
+
+
+RademacherSampler.__init__.__doc__ = r"""**Arguments:**
+
+- `dtype`: numeric representation for sampled test-vectors. Default is `int`.
+"""
