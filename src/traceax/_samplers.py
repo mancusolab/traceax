@@ -18,14 +18,19 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as rdm
 
+from equinox import AbstractVar
+from jax.dtypes import canonicalize_dtype
+from jax.numpy import issubdtype
 from jaxtyping import Array, DTypeLike, Inexact, Num, PRNGKeyArray
 
 
 class AbstractSampler(eqx.Module, strict=True):
     """Abstract base class for all samplers."""
 
+    dtype: AbstractVar[DTypeLike]
+
     @abstractmethod
-    def __call__(self, key: PRNGKeyArray, n: int, k: int, dtype: DTypeLike = float) -> Num[Array, "n k"]:
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Num[Array, "n k"]:
         r"""Sample random variates from the underlying distribution as an $n \times k$
         matrix.
 
@@ -58,8 +63,14 @@ class NormalSampler(AbstractSampler, strict=True):
         Supports float and complex-valued types.
     """
 
-    def __call__(self, key: PRNGKeyArray, n: int, k: int, dtype: DTypeLike = float) -> Inexact[Array, "n k"]:
-        return rdm.normal(key, (n, k), dtype)
+    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=float)
+
+    def __check_init__(self):
+        if not issubdtype(self.dtype, jnp.inexact):
+            raise ValueError(f"NormalSampler requires float or complex dtype. Found {self.dtype}.")
+
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
+        return rdm.normal(key, (n, k), self.dtype)
 
 
 class SphereSampler(AbstractSampler, strict=True):
@@ -74,8 +85,14 @@ class SphereSampler(AbstractSampler, strict=True):
         Supports float and complex-valued types.
     """
 
-    def __call__(self, key: PRNGKeyArray, n: int, k: int, dtype: DTypeLike = float) -> Inexact[Array, "n k"]:
-        samples = rdm.normal(key, (n, k), dtype)
+    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=float)
+
+    def __check_init__(self):
+        if not issubdtype(self.dtype, jnp.inexact):
+            raise ValueError(f"SphereSampler requires float or complex dtype. Found {self.dtype}.")
+
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Inexact[Array, "n k"]:
+        samples = rdm.normal(key, (n, k), self.dtype)
         return jnp.sqrt(n) * (samples / jnp.linalg.norm(samples, axis=0))
 
 
@@ -85,5 +102,11 @@ class RademacherSampler(AbstractSampler, strict=True):
     Generates samples $X_{ij} \sim \mathcal{U}(-1, +1)$ for $i \in [n]$ and $j \in [k]$.
     """
 
-    def __call__(self, key: PRNGKeyArray, n: int, k: int, dtype: DTypeLike = int) -> Num[Array, "n k"]:
-        return rdm.rademacher(key, (n, k), dtype)
+    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=int)
+
+    def __check_init__(self):
+        if not issubdtype(self.dtype, jnp.number):
+            raise ValueError(f"RademacherSampler requires numeric dtype. Found {self.dtype}.")
+
+    def __call__(self, key: PRNGKeyArray, n: int, k: int) -> Num[Array, "n k"]:
+        return rdm.rademacher(key, (n, k), self.dtype)
