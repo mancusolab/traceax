@@ -3,6 +3,7 @@ import inspect
 
 from griffe import Class, Docstring, dynamic_import, Extension, Function, get_logger, Object, ObjectNode
 from griffe.dataclasses import Parameter
+from griffe.expressions import ExprCall
 
 
 logger = get_logger(__name__)
@@ -41,11 +42,25 @@ class DynamicDocstrings(Extension):
             return  # skip objects that were not selected
 
         # pull class attributes as parameters for the __init__ function...
-        parameters = [
-            Parameter(name=attr.name, annotation=attr.annotation, kind=attr.kind)
-            for attr in cls.members.values()
-            if attr.is_attribute
-        ]
+        parameters = []
+        for attr in cls.members.values():
+            if attr.is_attribute:
+                if attr.value is not None:
+                    # import pdb; pdb.set_trace()
+                    if type(attr.value) is ExprCall and len(attr.value.arguments) > 0:
+                        for arg in attr.value.arguments:
+                            if arg.name == "default":
+                                param = Parameter(
+                                    name=attr.name, default=arg.value.name, annotation=attr.annotation, kind=attr.kind
+                                )
+                    else:
+                        param = Parameter(
+                            name=attr.name, default=attr.value, annotation=attr.annotation, kind=attr.kind
+                        )
+                else:
+                    param = Parameter(name=attr.name, annotation=attr.annotation, kind=attr.kind)
+                parameters.append(param)
+
         # such a huge hack to pull in inherited attributes
         cls.members["__init__"] = Function(
             name="__init__", parameters=parameters, docstring=_get_dynamic_docstring(cls, "__init__")

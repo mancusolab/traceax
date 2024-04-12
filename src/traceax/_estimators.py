@@ -57,6 +57,7 @@ class AbstractTraceEstimator(eqx.Module, strict=True):
             ```python
             key = jax.random.PRNGKey(...)
             operator = lx.MatrixLinearOperator(...)
+            hutch = tx.HutchinsonEstimator()
             result = hutch.compute(key, operator, k=10)
             #  or
             result = hutch(key, operator, k=10)

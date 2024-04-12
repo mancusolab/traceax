@@ -40,6 +40,18 @@ class AbstractSampler(eqx.Module, strict=True):
             sampler = tr.RademacherSampler()
             samples = sampler(key, n, k)
             ```
+
+        Each sampler accepts a `dtype` (i.e. `float`, `complex`, `int`) argument upon initialization,
+        with sensible default values. This makes it possible to sample from more general spaces (e.g.,
+        complex Normal test-vectors).
+
+        !!! Example
+
+            ```python
+            sampler = tr.NormalSampler(complex)
+            samples = sampler(key, n, k)
+            ```
+
         **Arguments:**
 
         - `key`: a jax PRNG key used as the random key.
