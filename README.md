@@ -18,6 +18,7 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 
   [**Installation**](#installation)
   | [**Example**](#get-started-with-example)
+  | [**Documentation**](#documentation)
   | [**Notes**](#notes)
   | [**Support**](#support)
   | [**Other Software**](#other-software)
@@ -79,6 +80,10 @@ print(hpp.estimate(key2, operator, k))  # (Array(3.9572973, dtype=float32), {})
 xt = tx.XTraceEstimator()
 print(xt.estimate(key3, operator, k))  # (Array(3.1775048, dtype=float32), {'std.err': Array(0.24185811, dtype=float32)})
 ```
+
+## Documentation
+Documentation is available at [here](https://mancusolab.github.io/traceax/).
+
 
 ## Notes
 
