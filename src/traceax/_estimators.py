@@ -16,6 +16,7 @@ from abc import abstractmethod
 from typing import Any
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 
@@ -99,7 +100,7 @@ class HutchinsonEstimator(AbstractTraceEstimator):
         samples = self.sampler(key, n, k)
 
         # project to k-dim space
-        projected = operator.mv(samples)
+        projected = jax.vmap(operator.mv, (1,), 1)(samples)
 
         # take the mean across estimates
         trace_est = jnp.sum(projected * samples) / k
@@ -136,12 +137,15 @@ class HutchPlusPlusEstimator(AbstractTraceEstimator):
         n, k = _check_shapes(operator, k)
         m = k // 3
 
+        # some operators work fine with matrices in mv, some dont; this ensures they all do
+        mv = jax.vmap(operator.mv, (1,), 1)
+
         # split X into 2 Xs; X1 and X2, where X1 has shape 2m, where m = k/3
         samples = self.sampler(key, n, 2 * m)
         X1 = samples[:, :m]
         X2 = samples[:, m:]
 
-        Y = operator.mv(X1)
+        Y = mv(X1)
 
         # compute Q, _ = QR(Y) (orthogonal matrix)
         Q, _ = jnp.linalg.qr(Y)
@@ -150,8 +154,8 @@ class HutchPlusPlusEstimator(AbstractTraceEstimator):
         G = X2 - Q @ (Q.T @ X2)
 
         # estimate trace = tr(Q.T @ A @ Q) + tr(G.T @ A @ G) / k
-        AQ = operator.mv(Q)
-        AG = operator.mv(G)
+        AQ = mv(Q)
+        AG = mv(G)
         trace_est = jnp.sum(AQ * Q) + jnp.sum(AG * G) / (G.shape[1])
 
         return trace_est, {}
@@ -190,8 +194,11 @@ class XTraceEstimator(AbstractTraceEstimator):
         n, k = _check_shapes(operator, k)
         m = k // 2
 
+        # some operators work fine with matrices in mv, some dont; this ensures they all do
+        mv = jax.vmap(operator.mv, (1,), 1)
+
         samples = self.sampler(key, n, m)
-        Y = operator.mv(samples)
+        Y = mv(samples)
         Q, R = jnp.linalg.qr(Y)
 
         # solve and rescale
@@ -200,7 +207,7 @@ class XTraceEstimator(AbstractTraceEstimator):
         S = S / s
 
         # working variables
-        Z = operator.mv(Q)
+        Z = mv(Q)
         H = Q.T @ Z
         W = Q.T @ samples
         T = Z.T @ samples
@@ -262,8 +269,12 @@ class XNysTraceEstimator(AbstractTraceEstimator):
             operator = -operator
 
         n, k = _check_shapes(operator, k)
+
+        # some operators work fine with matrices in mv, some dont; this ensures they all do
+        mv = jax.vmap(operator.mv, (1,), 1)
+
         samples = self.sampler(key, n, k)
-        Y = operator.mv(samples)
+        Y = mv(samples)
 
         # shift for numerical issues
         nu = jnp.finfo(Y.dtype).eps * norm(Y, "fro") / jnp.sqrt(n)
