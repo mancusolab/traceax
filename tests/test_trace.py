@@ -17,14 +17,17 @@ import pytest
 import jax.numpy as jnp
 import lineax as lx
 
-import traceax as tr
+import traceax as tx
 
 from .helpers import (
     construct_matrix,
 )
 
 
-@pytest.mark.parametrize("estimator", (tr.HutchinsonEstimator(), tr.HutchPlusPlusEstimator(), tr.XTraceEstimator()))
+@pytest.mark.parametrize(
+    "estimator",
+    (tx.HutchinsonEstimator(), tx.HutchPlusPlusEstimator(), tx.XTraceEstimator()),
+)
 @pytest.mark.parametrize("k", (5, 10, 50))
 @pytest.mark.parametrize(
     "tags",
@@ -44,14 +47,17 @@ def test_matrix_linop(getkey, estimator, k, tags, size, dtype):
     k = min(k, size)
     matrix = construct_matrix(getkey, tags, size, dtype)
     operator = lx.MatrixLinearOperator(matrix, tags=tags)
-    result = estimator.estimate(getkey(), operator, k)
+    result = tx.trace(getkey(), operator, k, estimator)
 
     assert result is not None
-    assert result[0] is not None
-    assert jnp.isfinite(result[0])
+    assert result.value is not None
+    assert jnp.isfinite(result.value)
 
 
-@pytest.mark.parametrize("estimator", (tr.HutchinsonEstimator(), tr.HutchPlusPlusEstimator(), tr.XTraceEstimator()))
+@pytest.mark.parametrize(
+    "estimator",
+    (tx.HutchinsonEstimator(), tx.HutchPlusPlusEstimator(), tx.XTraceEstimator()),
+)
 @pytest.mark.parametrize("k", (5, 10, 50))
 @pytest.mark.parametrize("size", (5, 50, 500))
 @pytest.mark.parametrize("dtype", (jnp.float32, jnp.float64))
@@ -59,15 +65,21 @@ def test_diag_linop(getkey, estimator, k, size, dtype):
     k = min(k, size)
     matrix = construct_matrix(getkey, lx.diagonal_tag, size, dtype)
     operator = lx.DiagonalLinearOperator(jnp.diag(matrix))
-    result = estimator.estimate(getkey(), operator, k)
+    result = tx.trace(getkey(), operator, k, estimator)
 
     assert result is not None
-    assert result[0] is not None
-    assert jnp.isfinite(result[0])
+    assert result.value is not None
+    assert jnp.isfinite(result.value)
 
 
 @pytest.mark.parametrize(
-    "estimator", (tr.HutchinsonEstimator(), tr.HutchPlusPlusEstimator(), tr.XTraceEstimator(), tr.XNysTraceEstimator())
+    "estimator",
+    (
+        tx.HutchinsonEstimator(),
+        tx.HutchPlusPlusEstimator(),
+        tx.XTraceEstimator(),
+        tx.XNysTraceEstimator(),
+    ),
 )
 @pytest.mark.parametrize("k", (5, 10, 50))
 @pytest.mark.parametrize("tags", (lx.positive_semidefinite_tag, lx.negative_semidefinite_tag))
@@ -77,8 +89,8 @@ def test_nsd_psd_matrix_linop(getkey, estimator, k, tags, size, dtype):
     k = min(k, size)
     matrix = construct_matrix(getkey, tags, size, dtype)
     operator = lx.MatrixLinearOperator(matrix, tags=tags)
-    result = estimator.estimate(getkey(), operator, k)
+    result = tx.trace(getkey(), operator, k, estimator)
 
     assert result is not None
-    assert result[0] is not None
-    assert jnp.isfinite(result[0])
+    assert result.value is not None
+    assert jnp.isfinite(result.value)
