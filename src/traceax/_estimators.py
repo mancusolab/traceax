@@ -70,3 +70,6 @@ class AbstractEstimator(eqx.Module, Generic[_EstimatorState], strict=True):
     def __call__(self, state: _EstimatorState, k: int) -> tuple[PyTree[Array], dict[str, Any]]:
         """An alias for `estimate`."""
         return self.estimate(state, k)
+
+    @abstractmethod
+    def transpose(self, state: _EstimatorState) -> _EstimatorState: ...

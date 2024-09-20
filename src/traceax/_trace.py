@@ -18,22 +18,17 @@ from typing_extensions import TypeAlias
 
 import equinox as eqx
 import equinox.internal as eqxi
+import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rdm
 import jax.scipy as jsp
 import jax.tree_util as jtu
+import lineax as lx
 
-from jax.interpreters import ad as ad
+from jax.interpreters import ad as ad, mlir as mlir
 from jax.numpy.linalg import norm
 from jaxtyping import Array, PRNGKeyArray, PyTree
-from lineax import (
-    AbstractLinearOperator,
-    DiagonalLinearOperator,
-    IdentityLinearOperator,
-    is_negative_semidefinite,
-    is_positive_semidefinite,
-)
 
 from ._estimators import AbstractEstimator
 from ._samplers import AbstractSampler, RademacherSampler, SphereSampler
@@ -53,8 +48,8 @@ def _get_scale(W: Array, D: Array, n: int, k: int) -> Array:
     return (n - k + 1) / (n - norm(W, axis=0) ** 2 + jnp.abs(D) ** 2)
 
 
-_BasicTraceState: TypeAlias = tuple[PRNGKeyArray, AbstractLinearOperator, int]
-_PSDTraceState: TypeAlias = tuple[PRNGKeyArray, AbstractLinearOperator, int, bool]
+_BasicTraceState: TypeAlias = tuple[PRNGKeyArray, lx.AbstractLinearOperator, int]
+_PSDTraceState: TypeAlias = tuple[PRNGKeyArray, lx.AbstractLinearOperator, int, bool]
 
 
 class HutchinsonEstimator(AbstractEstimator[_BasicTraceState], strict=True):
@@ -67,7 +62,7 @@ class HutchinsonEstimator(AbstractEstimator[_BasicTraceState], strict=True):
 
     sampler: AbstractSampler = RademacherSampler()
 
-    def init(self, key: PRNGKeyArray, operator: AbstractLinearOperator) -> _BasicTraceState:
+    def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _BasicTraceState:
         n = _check_operator(operator)
         return (key, operator, n)
 
@@ -86,6 +81,10 @@ class HutchinsonEstimator(AbstractEstimator[_BasicTraceState], strict=True):
         trace_est = jnp.sum(projected * samples) / k
 
         return trace_est, {}
+
+    def transpose(self, state: _BasicTraceState) -> _BasicTraceState:
+        key, operator, n = state
+        return key, operator.transpose(), n
 
 
 HutchinsonEstimator.__init__.__doc__ = r"""**Arguments:**
@@ -112,7 +111,7 @@ class HutchPlusPlusEstimator(AbstractEstimator[_BasicTraceState], strict=True):
 
     sampler: AbstractSampler = RademacherSampler()
 
-    def init(self, key: PRNGKeyArray, operator: AbstractLinearOperator) -> _BasicTraceState:
+    def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _BasicTraceState:
         n = _check_operator(operator)
         return (key, operator, n)
 
@@ -145,6 +144,10 @@ class HutchPlusPlusEstimator(AbstractEstimator[_BasicTraceState], strict=True):
 
         return trace_est, {}
 
+    def transpose(self, state: _BasicTraceState) -> _BasicTraceState:
+        key, operator, n = state
+        return key, operator.transpose(), n
+
 
 HutchPlusPlusEstimator.__init__.__doc__ = r"""**Arguments:**
 
@@ -175,7 +178,7 @@ class XTraceEstimator(AbstractEstimator[_BasicTraceState], strict=True):
     sampler: AbstractSampler = SphereSampler()
     improved: bool = True
 
-    def init(self, key: PRNGKeyArray, operator: AbstractLinearOperator) -> _BasicTraceState:
+    def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _BasicTraceState:
         n = _check_operator(operator)
         return (key, operator, n)
 
@@ -224,6 +227,10 @@ class XTraceEstimator(AbstractEstimator[_BasicTraceState], strict=True):
 
         return trace_est, {"std.err": std_err}
 
+    def transpose(self, state: _BasicTraceState) -> _BasicTraceState:
+        key, operator, n = state
+        return key, operator.transpose(), n
+
 
 XTraceEstimator.__init__.__doc__ = r"""**Arguments:**
 
@@ -252,10 +259,10 @@ class XNysTraceEstimator(AbstractEstimator[_PSDTraceState], strict=True):
     sampler: AbstractSampler = SphereSampler()
     improved: bool = True
 
-    def init(self, key: PRNGKeyArray, operator: AbstractLinearOperator) -> _PSDTraceState:
+    def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _PSDTraceState:
         n = _check_operator(operator)
-        is_nsd = is_negative_semidefinite(operator)
-        if not (is_positive_semidefinite(operator) | is_nsd):
+        is_nsd = lx.is_negative_semidefinite(operator)
+        if not (lx.is_positive_semidefinite(operator) | is_nsd):
             raise ValueError("`XNysTraceEstimator` may only be used for positive or negative definite linear operators")
         if is_nsd:
             operator = -operator
@@ -307,6 +314,10 @@ class XNysTraceEstimator(AbstractEstimator[_PSDTraceState], strict=True):
 
         return trace_est, {"std.err": std_err}
 
+    def transpose(self, state: _PSDTraceState) -> _PSDTraceState:
+        key, operator, n, is_nsd = state
+        return key, operator.transpose(), n, is_nsd
+
 
 XNysTraceEstimator.__init__.__doc__ = r"""**Arguments:**
 
@@ -351,17 +362,20 @@ def _estimate_trace_jvp(primals, tangents):
     # t_operator := V
     t_key, t_operator, t_state, t_k, t_estimator = tangents
     jtu.tree_map(_assert_false, (t_key, t_state, t_k, t_estimator))
+    del t_key, t_state, t_k, t_estimator
 
     # primal problem of t = tr(A)
     result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
     out = result, stats
 
-    # inner prodct in matrix space => <A, B> = tr(A @ B)
+    # inner prodct in linear operator space => <A, B> = tr(A @ B)
     # d tr(A) / dA = I
     # t' = <tr'(A), V> = tr(I @ V) = tr(V)
     # tangent problem => tr(V)
-    t_state = estimator.init(key, t_operator)
-    t_result, t_stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, t_operator, t_state, k, estimator)
+    # TODO: should we reuse key or split? both seem confusing options
+    key, t_key = rdm.split(key)
+    t_state = estimator.init(t_key, t_operator)
+    t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
 
     t_out = (
         t_result,
@@ -371,37 +385,84 @@ def _estimate_trace_jvp(primals, tangents):
     return out, t_out
 
 
+def _is_undefined(x):
+    return isinstance(x, ad.UndefinedPrimal)
+
+
+def _assert_defined(x):
+    assert not _is_undefined(x)
+
+
+def _remove_undefined_primal(x):
+    if _is_undefined(x):
+        return x.aval
+    else:
+        return
+
+
+def _build_diagonal(ct_result: float, op: lx.AbstractLinearOperator) -> lx.AbstractLinearOperator:
+    operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
+    if isinstance(op, lx.MatrixLinearOperator):
+        in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
+        diag = ct_result * jnp.ones(in_size)
+        return lx.MatrixLinearOperator(jnp.diag(diag), tags=operator_struct.tags)
+    elif isinstance(op, lx.DiagonalLinearOperator):
+        in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
+        diag = ct_result * jnp.ones(in_size)
+        return lx.DiagonalLinearOperator(diag)
+    elif isinstance(op, lx.MulLinearOperator):
+        inner_op = _build_diagonal(ct_result, op.operator)
+        scalar = op.scalar
+        return scalar * inner_op  # type: ignore
+    else:
+        raise ValueError("Unsupported type!")
+
+
 @eqxi.filter_primitive_transpose(materialise_zeros=True)  # pyright: ignore
 def _estimate_trace_transpose(inputs, cts_out):
-    key, operator, state, k, estimator = inputs
-    cts_result, cts_stats = cts_out
-    # jtu.tree_map(_assert_defined, (key, operator, state, k, estimator), is_leaf=_is_undefined)
-    # op_t = cts_result * IdentityLinearOperator(operator.in_structure())
-    op_t = cts_result * operator.transpose()
-    state_none = jtu.tree_map(lambda _: None, state)
+    # the jacobian, for the trace is just the identity matrix, i.e. J = I
+    # so J'v = I v = v
+
+    # primal inputs; operator should have UndefinedPrimal leaves
+    key, operator, state, _, estimator = inputs
+
+    # co-tangent of the trace approximation and the stats (None)
+    cts_result, _ = cts_out
+
+    # the internals of the operator are UndefinedPrimal leaves so
+    # we need to rely on abstract values to pull structure info
+    op_t = _build_diagonal(cts_result, operator)
+
+    key_none = jtu.tree_map(lambda _: None, key)
+    # state_none = jtu.tree_map(lambda _: None, state)
+    state_none = (None, op_t, None)
     k_none = None
     estimator_none = jtu.tree_map(lambda _: None, estimator)
 
-    return op_t, state_none, k_none, estimator_none
+    return key_none, op_t, state_none, k_none, estimator_none
 
 
-_estimate_trace_p = eqxi.create_vprim(
-    "trace",
-    eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=False)),
+_noclosure_check_impl = (eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=False)),)
+_estimate_trace_p = jax.core.Primitive("trace")  # type: ignore
+_estimate_trace_p.multiple_results = True
+_estimate_trace_p.def_impl(_noclosure_check_impl)
+_estimate_trace_p.def_abstract_eval(
     _estimate_trace_abstract_eval,
-    _estimate_trace_jvp,
-    _estimate_trace_transpose,
 )
+ad.primitive_jvps[_estimate_trace_p] = _estimate_trace_jvp
+ad.primitive_transposes[_estimate_trace_p] = _estimate_trace_transpose
+mlir.register_lowering(_estimate_trace_p, mlir.lower_fun(_noclosure_check_impl, multiple_results=True))  # type: ignore
+
+# rebind here to allow closure checks
 _estimate_trace_p.def_impl(
     eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=True)),
 )
-eqxi.register_impl_finalisation(_estimate_trace_p)
 
 
 # @eqx.filter_jit
 def trace(
     key: PRNGKeyArray,
-    operator: AbstractLinearOperator,
+    operator: lx.AbstractLinearOperator,
     k: int,
     estimator: AbstractEstimator = XTraceEstimator(),
     *,
@@ -425,14 +486,14 @@ def trace(
         )
 
     # if identity op, then just shortcircuit and return dimension size
-    if isinstance(operator, IdentityLinearOperator):
+    if isinstance(operator, lx.IdentityLinearOperator):
         return Solution(
-            value=float(in_size),
+            value=jnp.asarray(in_size, dtype=float),
             stats={},
             state=state,
         )
     # if diagonal op, then just shortcircuit and sum diagonal
-    if isinstance(operator, DiagonalLinearOperator):
+    if isinstance(operator, lx.DiagonalLinearOperator):
         return Solution(
             value=jnp.sum(operator.diagonal),
             stats={},
@@ -441,8 +502,9 @@ def trace(
 
     # set up state if necessary
     if state == sentinel:
-        key, s_key = rdm.split(key)
-        state = estimator.init(s_key, operator)
+        state = estimator.init(key, operator)
+        # we don't want to allow differntiate through trace-alg state, which likely contains the operator
+        # or by-products of the operator
         dynamic_state, static_state = eqx.partition(state, eqx.is_array)
         dynamic_state = lax.stop_gradient(dynamic_state)
         state = eqx.combine(dynamic_state, static_state)
