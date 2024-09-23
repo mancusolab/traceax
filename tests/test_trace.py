@@ -15,7 +15,6 @@
 import pytest
 
 import jax.numpy as jnp
-import jax.random as rdm
 import lineax as lx
 
 import traceax as tx
