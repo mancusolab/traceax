@@ -14,6 +14,7 @@
 
 import pytest
 
+import jax
 import jax.numpy as jnp
 import lineax as lx
 
@@ -110,6 +111,24 @@ def test_tridiagonal_linop(getkey, estimator, k, size, dtype):
     lower_diag = jnp.diag(matrix, k=-1)
     upper_diag = jnp.diag(matrix, k=1)
     operator = lx.TridiagonalLinearOperator(main_diag, lower_diag, upper_diag)
+    result = tx.trace(getkey(), operator, k, estimator)
+    
+    assert result is not None
+    assert result.value is not None
+    assert jnp.isfinite(result.value)
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    (tx.HutchinsonEstimator(), tx.HutchPlusPlusEstimator(), tx.XTraceEstimator()),
+)
+@pytest.mark.parametrize("k", (5, 10, 50))
+@pytest.mark.parametrize("size", (5, 50, 500))
+@pytest.mark.parametrize("dtype", (jnp.float32, jnp.float64))
+def test_identity_linop(getkey, estimator, k, size, dtype):
+    k = min(k, size)
+    input_structure = jax.ShapeDtypeStruct((size,), dtype)
+    operator = lx.IdentityLinearOperator(input_structure)
     result = tx.trace(getkey(), operator, k, estimator)
     
     assert result is not None
