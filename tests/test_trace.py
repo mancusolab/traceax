@@ -14,6 +14,7 @@
 
 import pytest
 
+import jax
 import jax.numpy as jnp
 import lineax as lx
 
@@ -112,6 +113,56 @@ def test_tridiagonal_linop(getkey, estimator, k, size, dtype):
     operator = lx.TridiagonalLinearOperator(main_diag, lower_diag, upper_diag)
     result = tx.trace(getkey(), operator, k, estimator)
     
+    assert result is not None
+    assert result.value is not None
+    assert jnp.isfinite(result.value)
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    (tx.HutchinsonEstimator(), tx.HutchPlusPlusEstimator(), tx.XTraceEstimator()),
+)
+@pytest.mark.parametrize("k", (5, 10, 50))
+@pytest.mark.parametrize("size", (5, 50, 500))
+@pytest.mark.parametrize("dtype", (jnp.float32, jnp.float64))
+def test_identity_linop(getkey, estimator, k, size, dtype):
+    k = min(k, size)
+    input_structure = jax.ShapeDtypeStruct((size,), dtype)
+    operator = lx.IdentityLinearOperator(input_structure)
+    result = tx.trace(getkey(), operator, k, estimator)
+    
+    assert result is not None
+    assert result.value is not None
+    assert jnp.isfinite(result.value)
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    (tx.HutchinsonEstimator(), tx.HutchPlusPlusEstimator(), tx.XTraceEstimator()),
+)
+@pytest.mark.parametrize("k", (5, 10, 50))
+@pytest.mark.parametrize(
+    "tags",
+    (
+        lx.diagonal_tag,
+        lx.symmetric_tag,
+        lx.lower_triangular_tag,
+        lx.upper_triangular_tag,
+        lx.tridiagonal_tag,
+        lx.unit_diagonal_tag,
+        lx.positive_semidefinite_tag,
+        lx.negative_semidefinite_tag,
+    ),
+)
+@pytest.mark.parametrize("size", (5, 50, 500))
+@pytest.mark.parametrize("dtype", (jnp.float32, jnp.float64))
+def test_tagged_linear_operator(getkey, estimator, k, tags, size, dtype):
+    k = min(k, size)
+    matrix = construct_matrix(getkey, tags, size, dtype)
+    operator = lx.MatrixLinearOperator(matrix, tags=tags)
+    tagged_operator = lx.TaggedLinearOperator(operator, tags=tags)
+    result = tx.trace(getkey(), tagged_operator, k, estimator)
+
     assert result is not None
     assert result.value is not None
     assert jnp.isfinite(result.value)
