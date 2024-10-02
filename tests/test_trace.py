@@ -167,6 +167,15 @@ def test_tagged_linop(getkey, estimator, k, tags, size, dtype):
     assert result.value is not None
     assert jnp.isfinite(result.value)
 
+    sym_operator = operator + operator.T
+    sym_operator = lx.TaggedLinearOperator(sym_operator, lx.symmetric_tag)
+    sym_result = tx.trace(getkey(), sym_operator, k, estimator)
+
+    assert lx.is_symmetric(sym_operator)
+    assert sym_result is not None
+    assert sym_result.value is not None
+    assert jnp.isfinite(sym_result.value)
+
 
 @pytest.mark.parametrize(
     "estimator",
