@@ -444,7 +444,7 @@ def _(op: lx.DiagonalLinearOperator, ct_result: float) -> lx.AbstractLinearOpera
 def _(op: lx.MulLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     inner_op = _make_identity(op.operator, ct_result)
     scalar = op.scalar
-    return scalar * inner_op  # type: ignore
+    return lx.MulLinearOperator(inner_op, scalar)
 
 
 @_make_identity.register
@@ -454,6 +454,33 @@ def _(op: lx.TridiagonalLinearOperator, ct_result: float) -> lx.AbstractLinearOp
     diag = ct_result * jnp.ones(in_size)
     off_diag = jnp.zeros(in_size - 1)
     return lx.TridiagonalLinearOperator(diag, off_diag, off_diag)
+
+
+@_make_identity.register
+def _(op: lx.AddLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
+    inner_op1 = _make_identity(op.operator1, ct_result)
+    inner_op2 = _make_identity(op.operator2, ct_result)
+    return lx.AddLinearOperator(inner_op1, inner_op2)
+
+
+@_make_identity.register
+def _(op: lx.NegLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
+    inner_op = _make_identity(op.operator, ct_result)
+    return lx.NegLinearOperator(inner_op)
+
+
+@_make_identity.register
+def _(op: lx.DivLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
+    inner_op = _make_identity(op.operator, ct_result)
+    scalar = op.scalar
+    return lx.DivLinearOperator(inner_op, scalar)
+
+
+@_make_identity.register
+def _(op: lx.ComposedLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
+    inner_op1 = _make_identity(op.operator1, ct_result)
+    inner_op2 = _make_identity(op.operator2, ct_result)
+    return lx.ComposedLinearOperator(inner_op1, inner_op2)
 
 
 @eqxi.filter_primitive_transpose(materialise_zeros=True)  # pyright: ignore
