@@ -18,7 +18,6 @@ from typing_extensions import TypeAlias
 
 import equinox as eqx
 import equinox.internal as eqxi
-import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rdm
@@ -376,7 +375,6 @@ def _estimate_trace_jvp(primals, tangents):
     key, t_key = rdm.split(key)
     t_state = estimator.init(t_key, t_operator)
     t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
-
     t_out = (
         t_result,
         jtu.tree_map(lambda _: None, stats),
@@ -400,25 +398,6 @@ def _remove_undefined_primal(x):
         return
 
 
-# def _build_diagonal(ct_result: float, op: lx.AbstractLinearOperator) -> lx.AbstractLinearOperator:
-#     operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
-#     if isinstance(op, lx.MatrixLinearOperator):
-#         in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-#         diag = ct_result * jnp.ones(in_size)
-#         return lx.MatrixLinearOperator(jnp.diag(diag), tags=operator_struct.tags)
-#     elif isinstance(op, lx.DiagonalLinearOperator):
-#         in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-#         diag = ct_result * jnp.ones(in_size)
-#         return lx.DiagonalLinearOperator(diag)
-#     elif isinstance(op, lx.MulLinearOperator):
-#         inner_op = _build_diagonal(ct_result, op.operator)
-#         scalar = op.scalar
-#         return scalar * inner_op  # type: ignore
-#     else:
-#         raise ValueError("Unsupported type!")
-
-
-# replaces _build_diagonal
 @ft.singledispatch
 def _make_identity(op: lx.AbstractLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     raise ValueError("Unsupported type!")
@@ -428,7 +407,7 @@ def _make_identity(op: lx.AbstractLinearOperator, ct_result: float) -> lx.Abstra
 def _(op: lx.MatrixLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
     in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-    diag = ct_result * jnp.ones(in_size)
+    diag = jnp.full(in_size, ct_result)
     return lx.MatrixLinearOperator(jnp.diag(diag), tags=operator_struct.tags)
 
 
@@ -436,14 +415,14 @@ def _(op: lx.MatrixLinearOperator, ct_result: float) -> lx.AbstractLinearOperato
 def _(op: lx.DiagonalLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
     in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-    diag = ct_result * jnp.ones(in_size)
+    diag = jnp.full(in_size, ct_result)
     return lx.DiagonalLinearOperator(diag)
 
 
 @_make_identity.register
 def _(op: lx.MulLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     inner_op = _make_identity(op.operator, ct_result)
-    scalar = op.scalar
+    scalar = jnp.array(1.0)
     return lx.MulLinearOperator(inner_op, scalar)
 
 
@@ -451,7 +430,7 @@ def _(op: lx.MulLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
 def _(op: lx.TridiagonalLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
     in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-    diag = ct_result * jnp.ones(in_size)
+    diag = jnp.full(in_size, ct_result)
     off_diag = jnp.zeros(in_size - 1)
     return lx.TridiagonalLinearOperator(diag, off_diag, off_diag)
 
@@ -496,11 +475,9 @@ def _estimate_trace_transpose(inputs, cts_out):
 
     # the internals of the operator are UndefinedPrimal leaves so
     # we need to rely on abstract values to pull structure info
-    # op_t = _build_diagonal(cts_result, operator)
     op_t = _make_identity(operator, cts_result)
 
     key_none = jtu.tree_map(lambda _: None, key)
-    # state_none = jtu.tree_map(lambda _: None, state)
     state_none = (None, op_t, None)
     k_none = None
     estimator_none = jtu.tree_map(lambda _: None, estimator)
@@ -508,24 +485,21 @@ def _estimate_trace_transpose(inputs, cts_out):
     return key_none, op_t, state_none, k_none, estimator_none
 
 
-_noclosure_check_impl = (eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=False)),)
-_estimate_trace_p = jax.core.Primitive("trace")  # type: ignore
-_estimate_trace_p.multiple_results = True
-_estimate_trace_p.def_impl(_noclosure_check_impl)
-_estimate_trace_p.def_abstract_eval(
+_estimate_trace_p = eqxi.create_vprim(
+    "trace",
+    eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=False)),
     _estimate_trace_abstract_eval,
+    _estimate_trace_jvp,
+    _estimate_trace_transpose,
 )
-ad.primitive_jvps[_estimate_trace_p] = _estimate_trace_jvp
-ad.primitive_transposes[_estimate_trace_p] = _estimate_trace_transpose
-mlir.register_lowering(_estimate_trace_p, mlir.lower_fun(_noclosure_check_impl, multiple_results=True))  # type: ignore
-
 # rebind here to allow closure checks
 _estimate_trace_p.def_impl(
     eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=True)),
 )
+eqxi.register_impl_finalisation(_estimate_trace_p)
 
 
-# @eqx.filter_jit
+@eqx.filter_jit
 def trace(
     key: PRNGKeyArray,
     operator: lx.AbstractLinearOperator,
