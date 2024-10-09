@@ -499,7 +499,7 @@ _estimate_trace_p.def_impl(
 eqxi.register_impl_finalisation(_estimate_trace_p)
 
 
-@eqx.filter_jit
+# @eqx.filter_jit
 def trace(
     key: PRNGKeyArray,
     operator: lx.AbstractLinearOperator,
