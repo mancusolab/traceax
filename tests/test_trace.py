@@ -222,9 +222,9 @@ def test_compound_op(getkey, estimator, k, tags, size, dtype):
     assert jnp.isfinite(composed_result.value)
 
     """MulLinearOperator"""
-    scalar = 0.5 # random value
+    scalar = jnp.asarray(0.5, dtype=dtype)  # random value; make sure precision matches specified!
     mul_op = scalar * op_a
-    mul_result = tx.trace(getkey(), mul_op, k, estimator)
+    mul_result = tx.trace(getkey(), mul_op, k, estimator)  # pyright: ignore
 
     assert mul_result is not None
     assert mul_result.value is not None
@@ -238,8 +238,8 @@ def test_compound_op(getkey, estimator, k, tags, size, dtype):
     assert jnp.isfinite(neg_result.value)
 
     """DivLinearOperator"""
-    denom = 0.5 # random value
-    div_result = tx.trace(getkey(), op_b/denom, k, estimator)
+    denom = jnp.asarray(0.5, dtype=dtype)  # random value; make sure precision matches specified!
+    div_result = tx.trace(getkey(), op_b / denom, k, estimator)
 
     assert div_result is not None
     assert div_result.value is not None
