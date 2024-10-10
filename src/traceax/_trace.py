@@ -20,12 +20,11 @@ import equinox as eqx
 import equinox.internal as eqxi
 import jax.lax as lax
 import jax.numpy as jnp
-import jax.random as rdm
 import jax.scipy as jsp
 import jax.tree_util as jtu
 import lineax as lx
 
-from jax.interpreters import ad as ad, mlir as mlir
+from jax.interpreters import ad as ad
 from jax.numpy.linalg import norm
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
@@ -33,11 +32,8 @@ from ._estimators import AbstractEstimator
 from ._samplers import AbstractSampler, RademacherSampler, SphereSampler
 from ._solution import Solution
 from ._utils import (
-    _assert_false,
     _check_operator,
     _clip_k,
-    _to_shapedarray,
-    _to_struct,
     _vmap_mv,
     sentinel,
 )
@@ -326,63 +322,6 @@ XNysTraceEstimator.__init__.__doc__ = r"""**Arguments:**
 """
 
 
-def _estimate_trace_impl(key, operator, state, k, estimator, *, check_closure):
-    out = estimator.estimate(state, k)
-    if check_closure:
-        out = eqxi.nontraceable(out, name="`traceax.trace` with respect to a closed-over value")
-    result, stats = out
-
-    return result, stats
-
-
-_to_struct_tr = ft.partial(_to_struct, name="traceax.trace")
-
-
-@eqxi.filter_primitive_def
-def _estimate_trace_abstract_eval(key, operator, state, k, estimator):
-    key, state, k, estimator = jtu.tree_map(_to_struct_tr, (key, state, k, estimator))
-    out = eqx.filter_eval_shape(
-        _estimate_trace_impl,
-        key,
-        operator,
-        state,
-        k,
-        estimator,
-        check_closure=False,
-    )
-    out = jtu.tree_map(_to_shapedarray, out)
-
-    return out
-
-
-@eqxi.filter_primitive_jvp
-def _estimate_trace_jvp(primals, tangents):
-    key, operator, state, k, estimator = primals
-    # t_operator := V
-    t_key, t_operator, t_state, t_k, t_estimator = tangents
-    jtu.tree_map(_assert_false, (t_key, t_state, t_k, t_estimator))
-    del t_key, t_state, t_k, t_estimator
-
-    # primal problem of t = tr(A)
-    result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
-    out = result, stats
-
-    # inner prodct in linear operator space => <A, B> = tr(A @ B)
-    # d tr(A) / dA = I
-    # t' = <tr'(A), V> = tr(I @ V) = tr(V)
-    # tangent problem => tr(V)
-    # TODO: should we reuse key or split? both seem confusing options
-    key, t_key = rdm.split(key)
-    t_state = estimator.init(t_key, t_operator)
-    t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
-    t_out = (
-        t_result,
-        jtu.tree_map(lambda _: None, stats),
-    )
-
-    return out, t_out
-
-
 def _is_undefined(x):
     return isinstance(x, ad.UndefinedPrimal)
 
@@ -485,25 +424,11 @@ def _estimate_trace_transpose(inputs, cts_out):
     return key_none, op_t, state_none, k_none, estimator_none
 
 
-_estimate_trace_p = eqxi.create_vprim(
-    "trace",
-    eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=False)),
-    _estimate_trace_abstract_eval,
-    _estimate_trace_jvp,
-    _estimate_trace_transpose,
-)
-# rebind here to allow closure checks
-_estimate_trace_p.def_impl(
-    eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=True)),
-)
-eqxi.register_impl_finalisation(_estimate_trace_p)
-
-
 @eqx.filter_jit
 def trace(
-    key: PRNGKeyArray,
     operator: lx.AbstractLinearOperator,
     k: int,
+    key: PRNGKeyArray,
     estimator: AbstractEstimator = XTraceEstimator(),
     *,
     state: PyTree[Any] = sentinel,
@@ -540,6 +465,11 @@ def trace(
             state=state,
         )
 
+    # cannot differentiate through key, state, or estimator
+    key = eqxi.nondifferentiable(key, name="`trace(key, ...)`")
+    state = eqxi.nondifferentiable(state, name="`trace(..., state=...)`")
+    estimator = eqxi.nondifferentiable(estimator, name="`trace(..., estimator=...)`")
+
     # set up state if necessary
     if state == sentinel:
         state = estimator.init(key, operator)
@@ -549,15 +479,39 @@ def trace(
         dynamic_state = lax.stop_gradient(dynamic_state)
         state = eqx.combine(dynamic_state, static_state)
 
-    # cannot differentiate through key, state, or estimator
-    key = eqxi.nondifferentiable(key, name="`trace(key, ...)`")
-    state = eqxi.nondifferentiable(state, name="`trace(..., state=...)`")
-    estimator = eqxi.nondifferentiable(estimator, name="`trace(..., estimator=...)`")
-
     # estimate trace and compute stats if any
-    result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
+    result, stats = _trace(state, estimator, k)
 
     # cannot differentiate backwards through stats
     stats = eqxi.nondifferentiable_backward(stats, name="_, stats = trace(...)")
 
     return Solution(value=result, stats=stats, state=state)
+
+
+@eqx.filter_custom_vjp
+def _trace(
+    state,
+    estimator,
+    k,
+):
+    return estimator.estimate(state, k)
+
+
+@_trace.def_fwd
+def _trace_fwd(
+    t_state,
+    state,
+    estimator,
+    k: int,
+): ...
+
+
+@_trace.def_bwd
+def _trace_bwd(
+    residuals,
+    grad_obj,
+    t_state,
+    state,
+    estimator,
+    k: int,
+): ...
