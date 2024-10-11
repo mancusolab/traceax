@@ -355,6 +355,10 @@ def _estimate_trace_abstract_eval(key, operator, state, k, estimator):
     return out
 
 
+def _is_none(x):
+    return x is None
+
+
 @eqxi.filter_primitive_jvp
 def _estimate_trace_jvp(primals, tangents):
     key, operator, state, k, estimator = primals
@@ -373,6 +377,10 @@ def _estimate_trace_jvp(primals, tangents):
     # tangent problem => tr(V)
     # TODO: should we reuse key or split? both seem confusing options
     key, t_key = rdm.split(key)
+    if any(t is not None for t in jtu.tree_leaves(t_operator, is_leaf=_is_none)):
+        t_operator = jtu.tree_map(eqxi.materialise_zeros, operator, t_operator, is_leaf=_is_none)
+        t_operator = lx.TangentLinearOperator(operator, t_operator)
+
     t_state = estimator.init(t_key, t_operator)
     t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
     t_out = (
@@ -395,12 +403,19 @@ def _remove_undefined_primal(x):
     if _is_undefined(x):
         return x.aval
     else:
-        return
+        return x
 
 
 @ft.singledispatch
 def _make_identity(op: lx.AbstractLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     raise ValueError("Unsupported type!")
+
+
+@_make_identity.register
+def _(op: lx.TangentLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
+    p_op = op.primal
+    t_op = op.tangent
+    return lx.TangentLinearOperator(p_op, _make_identity(t_op, ct_result))
 
 
 @_make_identity.register
