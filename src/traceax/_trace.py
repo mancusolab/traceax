@@ -18,7 +18,6 @@ from typing_extensions import TypeAlias
 
 import equinox as eqx
 import equinox.internal as eqxi
-import jax.debug as jdg
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rdm
