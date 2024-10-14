@@ -36,6 +36,9 @@ from ._utils import (
     _assert_false,
     _check_operator,
     _clip_k,
+    _is_none,
+    _is_undefined,
+    _remove_undefined_primal,
     _to_shapedarray,
     _to_struct,
     _vmap_mv,
@@ -355,57 +358,6 @@ def _estimate_trace_abstract_eval(key, operator, state, k, estimator):
     return out
 
 
-def _is_none(x):
-    return x is None
-
-
-@eqxi.filter_primitive_jvp
-def _estimate_trace_jvp(primals, tangents):
-    key, operator, state, k, estimator = primals
-    # t_operator := V
-    t_key, t_operator, t_state, t_k, t_estimator = tangents
-    jtu.tree_map(_assert_false, (t_key, t_state, t_k, t_estimator))
-    del t_key, t_state, t_k, t_estimator
-
-    # primal problem of t = tr(A)
-    result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
-    out = result, stats
-
-    # inner prodct in linear operator space => <A, B> = tr(A @ B)
-    # d tr(A) / dA = I
-    # t' = <tr'(A), V> = tr(I @ V) = tr(V)
-    # tangent problem => tr(V)
-    # TODO: should we reuse key or split? both seem confusing options
-    key, t_key = rdm.split(key)
-    if any(t is not None for t in jtu.tree_leaves(t_operator, is_leaf=_is_none)):
-        t_operator = jtu.tree_map(eqxi.materialise_zeros, operator, t_operator, is_leaf=_is_none)
-        t_operator = lx.TangentLinearOperator(operator, t_operator)
-
-    t_state = estimator.init(t_key, t_operator)
-    t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
-    t_out = (
-        t_result,
-        jtu.tree_map(lambda _: None, stats),
-    )
-
-    return out, t_out
-
-
-def _is_undefined(x):
-    return isinstance(x, ad.UndefinedPrimal)
-
-
-def _assert_defined(x):
-    assert not _is_undefined(x)
-
-
-def _remove_undefined_primal(x):
-    if _is_undefined(x):
-        return x.aval
-    else:
-        return x
-
-
 @ft.singledispatch
 def _make_identity(op: lx.AbstractLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     raise ValueError("Unsupported type!")
@@ -475,6 +427,38 @@ def _(op: lx.ComposedLinearOperator, ct_result: float) -> lx.AbstractLinearOpera
     inner_op1 = _make_identity(op.operator1, ct_result)
     inner_op2 = _make_identity(op.operator2, ct_result)
     return lx.ComposedLinearOperator(inner_op1, inner_op2)
+
+
+@eqxi.filter_primitive_jvp
+def _estimate_trace_jvp(primals, tangents):
+    key, operator, state, k, estimator = primals
+    # t_operator := V
+    t_key, t_operator, t_state, t_k, t_estimator = tangents
+    jtu.tree_map(_assert_false, (t_key, t_state, t_k, t_estimator))
+    del t_key, t_state, t_k, t_estimator
+
+    # primal problem of t = tr(A)
+    result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
+    out = result, stats
+
+    # inner prodct in linear operator space => <A, B> = tr(A @ B)
+    # d tr(A) / dA = I
+    # t' = <tr'(A), V> = tr(I @ V) = tr(V)
+    # tangent problem => tr(V)
+    # TODO: should we reuse key or split? both seem confusing options
+    key, t_key = rdm.split(key)
+    if any(t is not None for t in jtu.tree_leaves(t_operator, is_leaf=_is_none)):
+        t_operator = jtu.tree_map(eqxi.materialise_zeros, operator, t_operator, is_leaf=_is_none)
+        t_operator = lx.TangentLinearOperator(operator, t_operator)
+
+    t_state = estimator.init(t_key, t_operator)
+    t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
+    t_out = (
+        t_result,
+        jtu.tree_map(lambda _: None, stats),
+    )
+
+    return out, t_out
 
 
 @eqxi.filter_primitive_transpose(materialise_zeros=True)  # pyright: ignore

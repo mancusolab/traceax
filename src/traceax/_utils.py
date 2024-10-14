@@ -81,3 +81,10 @@ def _keep_undefined(v, ct):
         return ct
     else:
         return None
+
+
+def _remove_undefined_primal(x):
+    if _is_undefined(x):
+        return x.aval
+    else:
+        return x
