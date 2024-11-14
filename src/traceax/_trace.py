@@ -364,18 +364,28 @@ def _make_identity(op: lx.AbstractLinearOperator, ct_result: float) -> lx.Abstra
 
 
 @_make_identity.register
+def _(op: lx.MatrixLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
+    operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
+    in_size, out_size = eqx.filter_eval_shape(lambda o: (o.in_size(), o.out_size()), operator_struct)
+    if in_size != out_size:
+        raise ValueError("`_make_identity` only supports square matrices.")
+    diag = jnp.full(in_size, ct_result)
+    out = lx.MatrixLinearOperator(jnp.diag(diag), tags=operator_struct.tags)
+    return out
+
+
+@_make_identity.register
+def _(op: lx.MulLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
+    inner_op = _make_identity(op.operator, ct_result)
+    scalar = jnp.array(1.0)
+    return lx.MulLinearOperator(inner_op, scalar*ct_result)
+
+
+@_make_identity.register
 def _(op: lx.TangentLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
     p_op = op.primal
     t_op = op.tangent
     return lx.TangentLinearOperator(p_op, _make_identity(t_op, ct_result))
-
-
-@_make_identity.register
-def _(op: lx.MatrixLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
-    in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-    diag = jnp.full(in_size, ct_result)
-    return lx.MatrixLinearOperator(jnp.diag(diag), tags=operator_struct.tags)
 
 
 @_make_identity.register
@@ -384,13 +394,6 @@ def _(op: lx.DiagonalLinearOperator, ct_result: float) -> lx.AbstractLinearOpera
     in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
     diag = jnp.full(in_size, ct_result)
     return lx.DiagonalLinearOperator(diag)
-
-
-@_make_identity.register
-def _(op: lx.MulLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    inner_op = _make_identity(op.operator, ct_result)
-    scalar = jnp.array(1.0)
-    return lx.MulLinearOperator(inner_op, scalar)
 
 
 @_make_identity.register
@@ -447,12 +450,13 @@ def _estimate_trace_jvp(primals, tangents):
     # tangent problem => tr(V)
     # TODO: should we reuse key or split? both seem confusing options
     key, t_key = rdm.split(key)
-    if any(t is not None for t in jtu.tree_leaves(t_operator, is_leaf=_is_none)):
-        t_operator = jtu.tree_map(eqxi.materialise_zeros, operator, t_operator, is_leaf=_is_none)
-        t_operator = lx.TangentLinearOperator(operator, t_operator)
+
+    t_operator = jtu.tree_map(eqxi.materialise_zeros, operator, t_operator, is_leaf=_is_none)
+    t_operator = lx.TangentLinearOperator(operator, t_operator)
 
     t_state = estimator.init(t_key, t_operator)
     t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
+    # t_result = jnp.trace(t_operator.as_matrix())
     t_out = (
         t_result,
         jtu.tree_map(lambda _: None, stats),
