@@ -223,7 +223,7 @@ class XTraceEstimator(AbstractTraceEstimator):
         term3 = jnp.conjugate(SW_d) * jnp.sum(S * (R - HW), axis=0)
 
         if self.improved:
-            scale = _get_scale(W, SW_d, n, k)
+            scale = _get_scale(W, SW_d, n, m)
         else:
             scale = 1
 
