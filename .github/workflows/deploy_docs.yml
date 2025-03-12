@@ -1,10 +1,11 @@
-name: Build and Deploy Docs
+name: Build docs
 
 on:
   push:
     branches:
       - main
 
+# These permissions are required for it to work
 permissions:
   contents: read
   pages: write
@@ -12,15 +13,22 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ 3.11 ]
+        os: [ ubuntu-latest ]
+    runs-on: ${{ matrix.os }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.pages_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
@@ -31,23 +39,16 @@ jobs:
       - name: Build docs
         run: |
           mkdocs build
-          mkdocs build  # Run twice if needed
+          mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v4
 
       - name: Upload docs
         uses: actions/upload-pages-artifact@v4
         with:
-          path: site  # Ensure this matches your MkDocs output directory
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.pages_url }}
-    steps:
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v4
+          path: site  # where `mkdocs build` puts the built site
 
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        id: deployment # This is required for environment
+        uses: actions/deploy-pages@v3
