@@ -51,4 +51,4 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment # This is required for environment
-        uses: actions/deploy-pages@v3
+        uses: actions/deploy-pages@v4
