@@ -64,6 +64,10 @@ plugins:
     - include_exclude_files:
         exclude:
             - "_overrides"
+    - hippogriffe:
+          extra_public_objects:
+              - jax.Array
+              - lineax.AbstractLinearOperator
     - mkdocstrings:
         default_handler: python
         enable_inventory: true
@@ -74,22 +78,12 @@ plugins:
                 import:
                 - https://docs.kidger.site/equinox/objects.inv
                 - https://docs.kidger.site/jaxtyping/objects.inv
-                setup_commands:
-                    - import jaxtyping
-                    - jaxtyping.set_array_name_format("array")
-                    - import typing
-                    - typing.Any.__module__ = "builtins"
-                load_external_modules: true
                 options:
-                    preload_modules:
-                    - equinox
-                    - jaxtyping
                     extensions:
-                    - pydantic: {schema: true}
                     - docs/scripts/extension.py:DynamicDocstrings:
-                        paths: [ traceax._estimators, traceax._samplers ]
+                      paths: [ traceax._estimators, traceax._samplers ]
                     # general options
-                    allow_inspection: true
+                    force_inspection: true
                     show_bases: true
                     show_source: false
                     # heading options

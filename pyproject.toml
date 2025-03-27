@@ -45,6 +45,17 @@ dependencies = [
   "typing_extensions>=4.5.0",
 ]
 
+[project.optional-dependencies]
+docs = [
+  "hippogriffe",
+  "mkdocs",
+  "mkdocs-include-exclude-files",
+  "mkdocs-material",
+  "mkdocstrings",
+  "mkdocstrings-python",
+  "pymdown-extensions",
+]
+
 [project.urls]
 Documentation = "https://github.com/mancusolab/traceax#readme"
 Issues = "https://github.com/mancusolab/traceax/issues"
