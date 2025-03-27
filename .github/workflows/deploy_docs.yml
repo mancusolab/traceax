@@ -12,15 +12,13 @@ permissions:
   id-token: write
 
 jobs:
+  # build docs and upload
   build:
     strategy:
       matrix:
         python-version: [ 3.11 ]
         os: [ ubuntu-latest ]
     runs-on: ${{ matrix.os }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.pages_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,6 +45,14 @@ jobs:
         with:
           path: site  # where `mkdocs build` puts the built site
 
-      - name: Deploy to GitHub Pages
-        id: deployment # This is required for environment
-        uses: actions/deploy-pages@v3
+  # deployement job
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.pages_url }}
+    runs-on: ${{ matrix.os }}
+    needs: build
+    steps:
+        - name: Deploy to GitHub Pages
+          id: deployment # This is required for environment
+          uses: actions/deploy-pages@v4
