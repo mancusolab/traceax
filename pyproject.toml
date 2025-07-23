@@ -16,6 +16,7 @@ keywords = [
   "machine-learning",
 ]
 authors = [
+  { name = "Abdullah Al Nahid", email = "alnahid@usc.edu"},
   { name = "Linda Serafin", email = "lserafin@usc.edu" },
   { name = "Nicholas Mancuso", email = "nmancuso@usc.edu" },
 ]
