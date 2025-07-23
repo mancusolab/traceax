@@ -105,7 +105,7 @@ Documentation is available at [here](https://mancusolab.github.io/traceax/).
 
 Please report any bugs or feature requests in the [Issue
 Tracker](https://github.com/mancusolab/traceax/issues). If users have
-any questions or comments, please contact Linda Serafin (<lserafin@usc.edu>) or
+any questions or comments, please contact Abdullah Al Nahid (<alnahid@usc.edu>) or
 Nicholas Mancuso (<nmancuso@usc.edu>).
 
 ## Other Software
