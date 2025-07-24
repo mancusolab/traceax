@@ -6,7 +6,7 @@
 
 # traceax
 ``traceax`` is a Python library to perform stochastic trace estimation for linear operators. Namely,
-given a square linear operator $$\mathbf{A}$$, ``traceax`` provides flexible routines that estimate,
+given a square linear operator <i>`A`</i>, ``traceax`` provides flexible routines that estimate,
 
 $$\text{trace}(\mathbf{A}) = \sum_i \mathbf{A}_{ii},$$
 
