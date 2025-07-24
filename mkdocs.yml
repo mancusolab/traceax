@@ -27,7 +27,7 @@ theme:  # pulled from optimistix
     custom_dir: "docs/_overrides"  # Overriding part of the HTML
 
 
-site_name: Traceax
+site_name: traceax
 site_description: The documentation for the traceax software library.
 site_url: https://mancusolab.github.io/traceax
 

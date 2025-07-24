@@ -4,9 +4,9 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Project generated with Hatch](https://img.shields.io/badge/%F0%9F%A5%9A-Hatch-4051b5.svg)](https://github.com/pypa/hatch)
 
-# Traceax
+# traceax
 ``traceax`` is a Python library to perform stochastic trace estimation for linear operators. Namely,
-given a square linear operator $\mathbf{A}$, ``traceax`` provides flexible routines that estimate,
+given a square linear operator <i>`A`</i>, ``traceax`` provides flexible routines that estimate,
 
 $$\text{trace}(\mathbf{A}) = \sum_i \mathbf{A}_{ii},$$
 
@@ -14,10 +14,10 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 [lineax](https://github.com/patrick-kidger/lineax) as well as
 [XTrace](https://github.com/eepperly/XTrace).
 
-
-
   [**Installation**](#installation)
   | [**Example**](#get-started-with-example)
+  | [**Documentation**](#documentation)
+  | [**Citation**](#citation)
   | [**Notes**](#notes)
   | [**Support**](#support)
   | [**Other Software**](#other-software)
@@ -26,9 +26,15 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 
 ## Installation
 
-Users can download the latest repository and then use `pip`:
+Users can directly install from `pip`:
 
 ``` bash
+pip install traceax
+```
+
+Or, users can download the latest repository and then use `pip`:
+
+```
 git clone https://github.com/mancusolab/traceax.git
 cd traceax
 pip install .
@@ -85,6 +91,14 @@ nt = tx.XNysTraceEstimator()
 print(nt.estimate(key4, operator, k))  # (Array(3.3297246, dtype=float32), {'std.err': Array(0.00042093, dtype=float32)})
 ```
 
+## Documentation
+Documentation is available at [here](https://mancusolab.github.io/traceax/).
+
+## Citation
+If you use `traceax` in your work, please cite:
+
+> Nahid, A.A., Serafin, L., Mancuso, N. (2025). <i>traceax</i>: a JAX-based framework for stochastic trace estimation. bioRxiv (https://doi.org/10.1101/2025.07.14.662216)
+
 ## Notes
 
 -   `traceax` uses [JAX](https://github.com/google/jax) with [Just In
@@ -100,7 +114,7 @@ print(nt.estimate(key4, operator, k))  # (Array(3.3297246, dtype=float32), {'std
 
 Please report any bugs or feature requests in the [Issue
 Tracker](https://github.com/mancusolab/traceax/issues). If users have
-any questions or comments, please contact Linda Serafin (<lserafin@usc.edu>) or
+any questions or comments, please contact Abdullah Al Nahid (<alnahid@usc.edu>) or
 Nicholas Mancuso (<nmancuso@usc.edu>).
 
 ## Other Software
