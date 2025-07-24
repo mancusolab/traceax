@@ -14,11 +14,10 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 [lineax](https://github.com/patrick-kidger/lineax) as well as
 [XTrace](https://github.com/eepperly/XTrace).
 
-
-
   [**Installation**](#installation)
   | [**Example**](#get-started-with-example)
   | [**Documentation**](#documentation)
+  | [**Citation**](#citation)
   | [**Notes**](#notes)
   | [**Support**](#support)
   | [**Other Software**](#other-software)
@@ -27,10 +26,18 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 
 ## Installation
 
-Users can download the latest repository and then use `pip`:
+Users can directly install from `pip`:
 
 ``` bash
 pip install traceax
+```
+
+Or, users can download the latest repository and then use `pip`:
+
+```
+git clone https://github.com/mancusolab/traceax.git
+cd traceax
+pip install .
 ```
 
 ## Get Started with Example
@@ -87,6 +94,10 @@ print(nt.estimate(key4, operator, k))  # (Array(3.3297246, dtype=float32), {'std
 ## Documentation
 Documentation is available at [here](https://mancusolab.github.io/traceax/).
 
+## Citation
+If you use `traceax` in your work, please cite:
+
+> Nahid, A.A., Serafin, L., Mancuso, N. (2025). <i>traceax</i>: a JAX-based framework for stochastic trace estimation. bioRxiv (https://doi.org/10.1101/2025.07.14.662216)
 
 ## Notes
 
