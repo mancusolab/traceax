@@ -4,9 +4,9 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Project generated with Hatch](https://img.shields.io/badge/%F0%9F%A5%9A-Hatch-4051b5.svg)](https://github.com/pypa/hatch)
 
-# Traceax
+# traceax
 ``traceax`` is a Python library to perform stochastic trace estimation for linear operators. Namely,
-given a square linear operator $\mathbf{A}$, ``traceax`` provides flexible routines that estimate,
+given a square linear operator $$\mathbf{A}$$, ``traceax`` provides flexible routines that estimate,
 
 $$\text{trace}(\mathbf{A}) = \sum_i \mathbf{A}_{ii},$$
 
@@ -30,9 +30,7 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 Users can download the latest repository and then use `pip`:
 
 ``` bash
-git clone https://github.com/mancusolab/traceax.git
-cd traceax
-pip install .
+pip install traceax
 ```
 
 ## Get Started with Example
