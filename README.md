@@ -75,20 +75,20 @@ key, key1, key2, key3, key4 = rdm.split(key, 5)
 
 # Hutchinson estimator; default samples Rademacher {-1,+1}
 hutch = tx.HutchinsonEstimator()
-print(hutch.estimate(key1, operator, k))  # (Array(3.4099615, dtype=float32), {})
+print(tx.trace(key1, operator, k, hutch))  # (Array(3.6007538, dtype=float32), {})
 
 # Hutch++ estimator; default samples Rademacher {-1,+1}
 hpp = tx.HutchPlusPlusEstimator()
-print(hpp.estimate(key2, operator, k))  # (Array(3.3033807, dtype=float32), {})
+print(tx.trace(key2, operator, k, hpp))  # (Array(3.4094956, dtype=float32), {})
 
 # XTrace estimator; default samples uniformly on n-Sphere
 xt = tx.XTraceEstimator()
-print(xt.estimate(key3, operator, k))  # (Array(3.3271673, dtype=float32), {'std.err': Array(0.01717775, dtype=float32)})
+print(tx.trace(key3, operator, k, xt))  # (Array(3.3030486, dtype=float32), {'std.err': Array(0.01238528, dtype=float32)})
 
 # XNysTrace estimator; Improved performance for NSD/PSD trace estimates
 operator = lx.TaggedLinearOperator(operator, lx.positive_semidefinite_tag)
 nt = tx.XNysTraceEstimator()
-print(nt.estimate(key4, operator, k))  # (Array(3.3297246, dtype=float32), {'std.err': Array(0.00042093, dtype=float32)})
+print(tx.trace(key4, operator, k, nt))  # (Array(3.3314352, dtype=float32), {'std.err': Array(0.0006521, dtype=float32)})
 ```
 
 ## Documentation
