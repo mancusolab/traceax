@@ -26,11 +26,11 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 > [!NOTE]
 > For preprint, please see: <br/>
 > Nahid, A.A., Serafin, L., Mancuso, N. (2025). <i>traceax</i>: a JAX-based framework for stochastic trace estimation. bioRxiv 
-> (https://doi.org/10.1101/2025.07.14.662216)
+> [doi.org/10.1101/2025.07.14.662216](https://doi.org/10.1101/2025.07.14.662216)
 
 > [!IMPORTANT]
-> To reproduce the analyses in the preprint, please see: <br/>
-> https://github.com/mancusolab/traceax_analysis
+> To reproduce the analyses in the preprint: <br/>
+> [github.com/mancusolab/traceax_analysis](https://github.com/mancusolab/traceax_analysis)
 
 ------------------
 
