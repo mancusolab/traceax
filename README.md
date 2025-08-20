@@ -14,6 +14,15 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 [lineax](https://github.com/patrick-kidger/lineax) as well as
 [XTrace](https://github.com/eepperly/XTrace).
 
+  [**Installation**](#installation)
+  | [**Example**](#get-started-with-example)
+  | [**Documentation**](#documentation)
+  | [**Notes**](#notes)
+  | [**Support**](#support)
+  | [**Other Software**](#other-software)
+
+------------------
+
 > [!NOTE]
 > For preprint, please see: <br/>
 > Nahid, A.A., Serafin, L., Mancuso, N. (2025). <i>traceax</i>: a JAX-based framework for stochastic trace estimation. bioRxiv 
@@ -22,13 +31,6 @@ using only matrix-vector products. ``traceax`` is heavily inspired by
 > [!IMPORTANT]
 > To reproduce the analyses in the preprint, please see: <br/>
 > https://github.com/mancusolab/traceax_analysis
-
-  [**Installation**](#installation)
-  | [**Example**](#get-started-with-example)
-  | [**Documentation**](#documentation)
-  | [**Notes**](#notes)
-  | [**Support**](#support)
-  | [**Other Software**](#other-software)
 
 ------------------
 
