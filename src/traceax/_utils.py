@@ -58,7 +58,7 @@ def _to_struct(x, name):
         return jax.ShapeDtypeStruct(x.shape, x.dtype)
     elif isinstance(x, jax.core.AbstractValue):
         raise NotImplementedError(
-            f"`{name}` only supports working with JAX arrays; not " f"other abstract values. Got abstract value {x}."
+            f"`{name}` only supports working with JAX arrays; not other abstract values. Got abstract value {x}."
         )
     else:
         return x

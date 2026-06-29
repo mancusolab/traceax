@@ -7,7 +7,7 @@ name = "traceax"
 dynamic = ["version"]
 description = "Stochastic trace estimation in JAX, Lineax, and Equinox"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11,<4"
 license = {text = "Apache2.0"}
 keywords = [
   "jax",
@@ -30,10 +30,10 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Information Analysis",
   "Topic :: Scientific/Engineering :: Mathematics",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
@@ -46,14 +46,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+  "coverage[toml]",
+  "pytest",
+  "pytest-cov",
+  "ruff>=0.0.243",
+  "ty>=0.0.44",
+]
 docs = [
-  "hippogriffe",
-  "mkdocs",
-  "mkdocs-include-exclude-files",
-  "mkdocs-material",
-  "mkdocstrings>=0.29.0",
-  "mkdocstrings-python",
-  "pymdown-extensions",
+  "mkdocstrings-python>=1.12",
+  "mkdocstrings>=0.29",
+  "zensical>=0.0.37",
 ]
 
 [project.urls]
@@ -67,66 +70,45 @@ source = "vcs"
 [tool.hatch.build.hooks.vcs]
 version-file = "src/traceax/_version.py"
 
-[tool.hatch.envs.default]
+[tool.hatch.envs.test]
 dependencies = [
-  "coverage[toml]>=6.5",
+  "coverage[toml]",
   "pytest",
   "pytest-cov",
 ]
-[tool.hatch.envs.default.scripts]
-test = "pytest {args:tests}"
-test-cov = "coverage run -m pytest {args:tests}"
-cov-report = [
-  "- coverage combine",
-  "coverage report",
-]
-cov = [
-  "test-cov",
-  "cov-report",
-]
+
+[tool.hatch.envs.test.scripts]
+run-coverage = "pytest -p no:capture --cov-config=pyproject.toml --cov=traceax --cov=tests"
+run = "pytest -p no:capture"
 
 [[tool.hatch.envs.all.matrix]]
-python = ["3.9", "3.10", "3.11", "3.12"]
+python = ["3.11", "3.12", "3.13", "3.14"]
 
 [tool.hatch.envs.lint]
 detached = true
 dependencies = [
-  "mypy>=1.0.0",
-  "ruff>=0.2.2",
+  "ty>=0.0.44",
+  "ruff>=0.0.243",
 ]
 [tool.hatch.envs.lint.scripts]
-typing = "mypy --install-types --non-interactive {args:src/traceax tests}"
-style = [
-  "ruff {args:.}",
-]
-fmt = [
-  "ruff --fix {args:.}",
-  "style",
-]
-all = [
-  "style",
-  "typing",
-]
+lint = "ruff check src tests"
+format = "ruff format --check src tests"
+typecheck = "ty check src tests"
 
 [tool.ruff]
+target-version = "py311"
 line-length = 120
 
-[tool.ruff.lint]
-fixable = ["ALL"]
-select = ["E", "F", "I001"]
-ignore = [
-  # Allow non-abstract empty methods in abstract base classes
-  "B027",
-  # Allow boolean positional values in function calls, like `dict.get(... True)`
-  "FBT003",
-  # Ignore checks for possible passwords
-  "S105", "S106", "S107",
-  # Ignore complexity
-  "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",
-  # gets confused on empty strings for array types (e.g., Bool[Array, ""])
-  "F722"
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-m", "not slow"]
+markers = [
+  "slow: broad operator/tag/dtype/size integration matrix",
 ]
-ignore-init-module-imports = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I001", "UP"]
+ignore = ["E402", "E721", "E731", "E741", "F722", "TID252"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["traceax"]
@@ -142,14 +124,15 @@ order-by-type = false
 jax-ecosystem = ["equinox", "jax", "jaxtyping", "lineax"]
 
 [tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
 # Tests can use magic values, assertions, and relative imports
 "tests/**/*" = ["PLR2004", "S101", "TID252"]
 
-[tool.pyright]
-reportIncompatibleMethodOverride = true
-reportIncompatibleVariableOverride = false  # Incompatible with eqx.AbstractVar
-include = ["src/traceax", "tests"]
-exclude = ["docs"]
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.ty.src]
+include = ["src", "tests"]
 
 [tool.coverage.run]
 source_pkgs = ["traceax", "tests"]

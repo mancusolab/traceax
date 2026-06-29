@@ -13,18 +13,18 @@
 #  limitations under the License.
 import functools as ft
 
-from typing import Any
-from typing_extensions import TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import equinox as eqx
 import equinox.internal as eqxi
+import jax
 import jax.lax as lax
 import jax.numpy as jnp
-import jax.random as rdm
 import jax.scipy as jsp
 import jax.tree_util as jtu
 import lineax as lx
 
+from jax.flatten_util import ravel_pytree
 from jax.interpreters import ad as ad, mlir as mlir
 from jax.numpy.linalg import norm
 from jaxtyping import Array, PRNGKeyArray, PyTree
@@ -37,21 +37,106 @@ from ._utils import (
     _check_operator,
     _clip_k,
     _is_none,
-    _is_undefined,
-    _remove_undefined_primal,
     _to_shapedarray,
     _to_struct,
-    _vmap_mv,
     sentinel,
 )
 
 
 def _get_scale(W: Array, D: Array, n: int, k: int) -> Array:
+    """Compute the XTrace/XNysTrace finite-population correction."""
     return (n - k + 1) / (n - norm(W, axis=0) ** 2 + jnp.abs(D) ** 2)
+
+
+def _check_k(k: int, n: int, estimator_name: str, *, min_k: int = 1) -> int:
+    """Validate and clip the probe count before entering traced estimator code.
+
+    `k` controls sampled array shapes, so it must be a Python integer at the
+    public boundary. Letting a JAX scalar through would fail later with a tracer
+    boolean-conversion error from Python `min`/`max`, which is much harder for
+    users to interpret.
+    """
+    if type(k) is not int:
+        raise TypeError(f"`k` must be a Python int. Found {type(k).__name__}.")
+
+    k = _clip_k(k, n)
+    if k < min_k:
+        raise ValueError(f"`{estimator_name}` requires `k >= {min_k}` after clipping to operator size. Found {k}.")
+
+    return k
+
+
+def _structure_is_complex(structure: PyTree[Any]) -> bool:
+    """Return whether any ShapeDtypeStruct-like leaf carries a complex dtype."""
+    for leaf in jtu.tree_leaves(structure):
+        dtype = getattr(leaf, "dtype", None)
+        if dtype is not None and jnp.issubdtype(dtype, jnp.complexfloating):
+            return True
+    return False
+
+
+def _check_real_operator(operator: lx.AbstractLinearOperator) -> None:
+    """Reject complex operators until estimator formulas use Hermitian products."""
+    if _structure_is_complex(operator.in_structure()) or _structure_is_complex(operator.out_structure()):
+        raise ValueError("`traceax.trace` does not currently support complex-valued linear operators.")
+
+
+def _unravel_vector(vector: Array, structure: PyTree[jax.ShapeDtypeStruct]) -> PyTree[Array]:
+    """Convert one flat probe vector into an operator-compatible PyTree."""
+    prototype = jtu.tree_map(lambda leaf: jnp.zeros(leaf.shape, leaf.dtype), structure)
+    flat_prototype, unravel = ravel_pytree(prototype)
+    # Samplers may produce integer Rademacher probes or higher-precision sphere
+    # probes. Cast before unravelling so Lineax function/Jacobian operators see
+    # vectors matching their declared input structure.
+    return unravel(vector.astype(flat_prototype.dtype))
+
+
+def _ravel_vector(pytree: PyTree[Array]) -> Array:
+    """Flatten one operator output PyTree into trace-estimator coordinates."""
+    flat, _ = ravel_pytree(pytree)
+    return flat
+
+
+def _sum_leaves(pytree: PyTree[Array]) -> Array:
+    """Sum every array leaf in a PyTree."""
+    leaf_sums = eqxi.ω(pytree).call(jnp.sum).ω
+    return jtu.tree_reduce(lambda left, right: left + right, leaf_sums)
+
+
+def _project_probes(operator: lx.AbstractLinearOperator, samples: Array) -> Array:
+    """Apply an abstract operator to flat probe columns.
+
+    Estimators such as Hutch++ and XTrace need dense probe matrices for QR and
+    correction formulas. Lineax operators, however, may act on PyTrees. This
+    helper keeps estimator algebra in flat coordinates while respecting each
+    operator's input/output PyTree structure at the `mv` boundary.
+    """
+    input_structure = operator.in_structure()
+
+    def mv_flat(sample):
+        vector = _unravel_vector(sample, input_structure)
+        return _ravel_vector(operator.mv(vector))
+
+    return jax.vmap(mv_flat, in_axes=1, out_axes=1)(samples)
+
+
+def _linear_probe_trace(key: PRNGKeyArray, operator: lx.AbstractLinearOperator, k: int) -> PyTree[Array]:
+    """Estimate `trace(operator)` with the universal functional-mode fallback.
+
+    Functional AD needs a linear stochastic approximation to `trace(dA)`. The
+    Hutchinson rule is the least-assumptive fallback because it only requires
+    fixed probes and operator-vector products.
+    """
+    estimator = HutchinsonEstimator()
+    state = estimator.init(key, operator)
+    value, _stats = estimator.estimate(state, k)
+    return value
 
 
 _BasicTraceState: TypeAlias = tuple[PRNGKeyArray, lx.AbstractLinearOperator, int]
 _PSDTraceState: TypeAlias = tuple[PRNGKeyArray, lx.AbstractLinearOperator, int, bool]
+TraceGradMode: TypeAlias = Literal["functional", "estimator"]
+_TRACE_GRAD_MODES = ("functional", "estimator")
 
 
 class HutchinsonEstimator(AbstractEstimator[_BasicTraceState], strict=True):
@@ -65,26 +150,26 @@ class HutchinsonEstimator(AbstractEstimator[_BasicTraceState], strict=True):
     sampler: AbstractSampler = RademacherSampler()
 
     def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _BasicTraceState:
+        """Create reusable state for a fixed key/operator pair."""
         n = _check_operator(operator)
         return (key, operator, n)
 
     def estimate(self, state: _BasicTraceState, k: int) -> tuple[PyTree[Array], dict[str, Any]]:
+        """Estimate the trace with the Girard-Hutchinson identity."""
         key, operator, n = state
 
-        k = _clip_k(k, n)
+        k = _check_k(k, n, "HutchinsonEstimator")
 
-        # sample from proposed distribution
+        # The sampler contract enforces E[zz^T] = I, making z^T A z an
+        # unbiased estimate of trace(A) for real-valued operators.
         samples = self.sampler(key, n, k)
-
-        # project to k-dim space
-        projected = _vmap_mv(operator)(samples)
-
-        # take the mean across estimates
+        projected = _project_probes(operator, samples)
         trace_est = jnp.sum(projected * samples) / k
 
         return trace_est, {}
 
     def transpose(self, state: _BasicTraceState) -> _BasicTraceState:
+        """Return estimator state for the transposed linear operator."""
         key, operator, n = state
         return key, operator.transpose(), n
 
@@ -114,32 +199,34 @@ class HutchPlusPlusEstimator(AbstractEstimator[_BasicTraceState], strict=True):
     sampler: AbstractSampler = RademacherSampler()
 
     def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _BasicTraceState:
+        """Create reusable state for a fixed key/operator pair."""
         n = _check_operator(operator)
         return (key, operator, n)
 
     def estimate(self, state: _BasicTraceState, k: int) -> tuple[PyTree[Array], dict[str, Any]]:
+        """Estimate the trace with Hutch++ low-rank variance reduction."""
         key, operator, n = state
 
-        k = _clip_k(k, n)
+        k = _check_k(k, n, "HutchPlusPlusEstimator", min_k=3)
         m = k // 3
 
-        # some operators work fine with matrices in mv, some dont; this ensures they all do
-        mv = _vmap_mv(operator)
+        # Probe matrices live in flattened coordinates. `_project_probes`
+        # handles the conversion to and from the operator's input/output PyTrees.
+        mv = ft.partial(_project_probes, operator)
 
-        # split X into 2 Xs; X1 and X2, where X1 has shape 2m, where m = k/3
+        # Hutch++ spends one block on the range sketch and one independent block
+        # on the residual trace estimate.
         samples = self.sampler(key, n, 2 * m)
         X1 = samples[:, :m]
         X2 = samples[:, m:]
 
         Y = mv(X1)
 
-        # compute Q, _ = QR(Y) (orthogonal matrix)
+        # Q spans the sampled range of A. The residual term below estimates the
+        # trace not captured by this low-rank subspace.
         Q, _ = jnp.linalg.qr(Y)
-
-        # compute G = X2 - Q @ (Q.T @ X2)
         G = X2 - Q @ (Q.T @ X2)
 
-        # estimate trace = tr(Q.T @ A @ Q) + tr(G.T @ A @ G) / k
         AQ = mv(Q)
         AG = mv(G)
         trace_est = jnp.sum(AQ * Q) + jnp.sum(AG * G) / (G.shape[1])
@@ -147,6 +234,7 @@ class HutchPlusPlusEstimator(AbstractEstimator[_BasicTraceState], strict=True):
         return trace_est, {}
 
     def transpose(self, state: _BasicTraceState) -> _BasicTraceState:
+        """Return estimator state for the transposed linear operator."""
         key, operator, n = state
         return key, operator.transpose(), n
 
@@ -178,31 +266,37 @@ class XTraceEstimator(AbstractEstimator[_BasicTraceState], strict=True):
     """
 
     sampler: AbstractSampler = SphereSampler()
-    improved: bool = True
+    improved: bool = eqx.field(static=True, default=True)
 
     def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _BasicTraceState:
+        """Create reusable state for a fixed key/operator pair."""
         n = _check_operator(operator)
         return (key, operator, n)
 
     def estimate(self, state: _BasicTraceState, k: int) -> tuple[PyTree[Array], dict[str, Any]]:
+        """Estimate the trace with the exchangeable XTrace estimator."""
         key, operator, n = state
 
-        k = _clip_k(k, n)
+        k = _check_k(k, n, "XTraceEstimator", min_k=2)
         m = k // 2
 
-        # some operators work fine with matrices in mv, some dont; this ensures they all do
-        mv = _vmap_mv(operator)
+        # Keep the estimator operator-based. Many Lineax operators are implicit
+        # and can only promise a vector `mv`, not dense matrix multiplication.
+        mv = ft.partial(_project_probes, operator)
 
         samples = self.sampler(key, n, m)
         Y = mv(samples)
         Q, R = jnp.linalg.qr(Y)
 
-        # solve and rescale
+        # XTrace uses the inverse R factor to construct leave-one-out style
+        # weights. Normalization keeps these weights comparable across probes.
         S = jnp.linalg.inv(R).T
         s = norm(S, axis=0)
         S = S / s
 
-        # working variables
+        # Cache all projected quantities once. This makes the exchangeable
+        # correction formula below read directly in terms of its mathematical
+        # components and avoids repeated operator evaluations.
         Z = mv(Q)
         H = Q.T @ Z
         W = Q.T @ samples
@@ -230,6 +324,7 @@ class XTraceEstimator(AbstractEstimator[_BasicTraceState], strict=True):
         return trace_est, {"std.err": std_err}
 
     def transpose(self, state: _BasicTraceState) -> _BasicTraceState:
+        """Return estimator state for the transposed linear operator."""
         key, operator, n = state
         return key, operator.transpose(), n
 
@@ -259,9 +354,10 @@ class XNysTraceEstimator(AbstractEstimator[_PSDTraceState], strict=True):
     """
 
     sampler: AbstractSampler = SphereSampler()
-    improved: bool = True
+    improved: bool = eqx.field(static=True, default=True)
 
     def init(self, key: PRNGKeyArray, operator: lx.AbstractLinearOperator) -> _PSDTraceState:
+        """Create state for a positive- or negative-semidefinite operator."""
         n = _check_operator(operator)
         is_nsd = lx.is_negative_semidefinite(operator)
         if not (lx.is_positive_semidefinite(operator) | is_nsd):
@@ -272,31 +368,33 @@ class XNysTraceEstimator(AbstractEstimator[_PSDTraceState], strict=True):
         return (key, operator, n, is_nsd)
 
     def estimate(self, state: _PSDTraceState, k: int) -> tuple[PyTree[Array], dict[str, Any]]:
+        """Estimate the trace with the Nyström variant for semidefinite operators."""
         key, operator, n, is_nsd = state
 
-        k = _clip_k(k, n)
+        k = _check_k(k, n, "XNysTraceEstimator")
 
-        # some operators work fine with matrices in mv, some dont; this ensures they all do
-        mv = _vmap_mv(operator)
+        # XNysTrace is still an operator algorithm: all dense blocks below are
+        # probe matrices, not materializations of the linear operator.
+        mv = ft.partial(_project_probes, operator)
 
         samples = self.sampler(key, n, k)
         Y = mv(samples)
 
-        # shift for numerical issues
+        # The small diagonal shift stabilizes the Cholesky path for nearly
+        # singular sketches without changing the trace estimate at leading order.
         nu = jnp.finfo(Y.dtype).eps * norm(Y, "fro") / jnp.sqrt(n)
         Y = Y + samples * nu
         Q, R = jnp.linalg.qr(Y)
 
-        # compute and symmetrize H, then take cholesky factor
+        # H should be symmetric for PSD operators, but symmetrizing protects the
+        # Cholesky factorization from floating-point asymmetry.
         H = samples.T @ Y
         C = jnp.linalg.cholesky(0.5 * (H + H.T)).T
         B = jsp.linalg.solve_triangular(C.T, R.T, lower=True).T
 
-        # if improved == True
         Qs, Rs = jnp.linalg.qr(samples)
         Ws = Qs.T @ samples
 
-        # solve and rescale
         if self.improved:
             S = jnp.linalg.inv(Rs).T
             s = norm(S, axis=0)
@@ -317,6 +415,7 @@ class XNysTraceEstimator(AbstractEstimator[_PSDTraceState], strict=True):
         return trace_est, {"std.err": std_err}
 
     def transpose(self, state: _PSDTraceState) -> _PSDTraceState:
+        """Return estimator state for the transposed linear operator."""
         key, operator, n, is_nsd = state
         return key, operator.transpose(), n, is_nsd
 
@@ -329,9 +428,144 @@ XNysTraceEstimator.__init__.__doc__ = r"""**Arguments:**
 """
 
 
+def _functional_trace_estimate(
+    key: PRNGKeyArray,
+    primal_operator: lx.AbstractLinearOperator,
+    operator: lx.AbstractLinearOperator,
+    k: int,
+    estimator: AbstractEstimator,
+) -> PyTree[Array]:
+    """Estimate `trace(operator)` for the functional-mode AD rule.
+
+    `primal_operator` may be used to build variance-reducing sketches, but the
+    returned scalar must remain linear in `operator`. This keeps JVPs and VJPs
+    tied to the trace functional, `trace(dA)`, instead of to the derivative of a
+    nonlinear estimator program.
+    """
+    if isinstance(estimator, HutchPlusPlusEstimator):
+        return _hutchplusplus_frozen_sketch_trace(key, primal_operator, operator, k, estimator)
+    return _linear_probe_trace(key, operator, k)
+
+
+def _hutchplusplus_frozen_sketch_trace(
+    key: PRNGKeyArray,
+    primal_operator: lx.AbstractLinearOperator,
+    operator: lx.AbstractLinearOperator,
+    k: int,
+    estimator: HutchPlusPlusEstimator,
+) -> PyTree[Array]:
+    """Estimate `trace(operator)` with a frozen Hutch++ sketch.
+
+    The low-rank basis is adapted to `primal_operator` for variance reduction,
+    then stopped before applying `operator`. In functional AD, `operator` is the
+    tangent operator in JVPs and the live primal operator in VJPs.
+    """
+    n = _check_operator(primal_operator)
+    k = _check_k(k, n, "HutchPlusPlusEstimator", min_k=3)
+    m = k // 3
+
+    primal_mv = ft.partial(_project_probes, primal_operator)
+    operator_mv = ft.partial(_project_probes, operator)
+
+    samples = estimator.sampler(key, n, 2 * m)
+    X1 = samples[:, :m]
+    X2 = samples[:, m:]
+
+    Y = primal_mv(X1)
+    Q, _ = jnp.linalg.qr(Y)
+    Q = lax.stop_gradient(Q)
+
+    G = X2 - Q @ (Q.T @ X2)
+    G = lax.stop_gradient(G)
+
+    AQ = operator_mv(Q)
+    AG = operator_mv(G)
+    return jnp.sum(AQ * Q) + jnp.sum(AG * G) / G.shape[1]
+
+
+class _TangentLinearOperator(lx.AbstractLinearOperator):
+    """Represent an operator tangent as a Lineax operator.
+
+    The functional JVP needs to evaluate `trace(V)` where `V` is the tangent of
+    an arbitrary `AbstractLinearOperator` PyTree. Lineax does not require that an
+    operator can materialize as a matrix, so this wrapper defines `mv` by pushing
+    a JVP through the primal operator's `mv` method.
+    """
+
+    primal: lx.AbstractLinearOperator
+    tangent: lx.AbstractLinearOperator
+    scalar: Array = eqx.field(converter=jnp.asarray)
+
+    def __check_init__(self):
+        assert type(self.primal) is type(self.tangent)  # noqa: E721
+
+    def mv(self, vector):
+        """Apply the tangent operator to one vector."""
+        mv = lambda operator: operator.mv(vector)
+        out, t_out = eqx.filter_jvp(mv, (self.primal,), (self.tangent,))
+        # `filter_jvp` returns `None` for nondifferentiable/static leaves. Lineax
+        # expects an array-valued vector output, so missing tangents represent
+        # zeros in the output structure.
+        tangent_out = jtu.tree_map(eqxi.materialise_zeros, out, t_out, is_leaf=_is_none)
+        return (eqxi.ω(tangent_out) * self.scalar).ω
+
+    def as_matrix(self):
+        """Materialize the tangent only when the primal operator supports it."""
+        as_matrix = lambda operator: operator.as_matrix()
+        out, t_out = eqx.filter_jvp(as_matrix, (self.primal,), (self.tangent,))
+        return jtu.tree_map(eqxi.materialise_zeros, out, t_out, is_leaf=_is_none)
+
+    def transpose(self):
+        """Transpose both primal and tangent through Lineax's operator API."""
+        transpose = lambda operator: operator.transpose()
+        primal_out, tangent_out = eqx.filter_jvp(transpose, (self.primal,), (self.tangent,))
+        return _TangentLinearOperator(primal_out, tangent_out, scalar=self.scalar)
+
+    def in_structure(self):
+        return self.primal.in_structure()
+
+    def out_structure(self):
+        return self.primal.out_structure()
+
+
+@lx.is_symmetric.register(_TangentLinearOperator)
+def _(op):
+    return False
+
+
+@lx.is_positive_semidefinite.register(_TangentLinearOperator)
+def _(op):
+    return False
+
+
+@lx.is_negative_semidefinite.register(_TangentLinearOperator)
+def _(op):
+    return False
+
+
+def _refresh_builtin_state_operator(
+    state: PyTree[Any], operator: lx.AbstractLinearOperator, estimator: AbstractEstimator
+) -> PyTree[Any]:
+    """Rebind built-in estimator state to the operator from the current call.
+
+    Built-in states store the operator so that users can reuse random probes.
+    Without this refresh, a caller could pass stale state from a previous
+    operator and receive a value for the old operator but a gradient for the new
+    one. Custom estimator states are left untouched because traceax cannot know
+    their layout.
+    """
+    if isinstance(estimator, HutchinsonEstimator | HutchPlusPlusEstimator | XTraceEstimator | XNysTraceEstimator):
+        state_key = state[0]
+        return estimator.init(state_key, operator)
+    return state
+
+
 def _estimate_trace_impl(key, operator, state, k, estimator, *, check_closure):
+    """Implementation shared by abstract evaluation and primitive execution."""
     out = estimator.estimate(state, k)
     if check_closure:
+        # Closed-over JAX arrays should be explicit PyTree leaves. Treating them
+        # as Python closure data can produce invalid traces under JIT/AD.
         out = eqxi.nontraceable(out, name="`traceax.trace` with respect to a closed-over value")
     result, stats = out
 
@@ -343,6 +577,7 @@ _to_struct_tr = ft.partial(_to_struct, name="traceax.trace")
 
 @eqxi.filter_primitive_def
 def _estimate_trace_abstract_eval(key, operator, state, k, estimator):
+    """Infer the primitive output structure without running estimator numerics."""
     key, state, k, estimator = jtu.tree_map(_to_struct_tr, (key, state, k, estimator))
     out = eqx.filter_eval_shape(
         _estimate_trace_impl,
@@ -358,105 +593,37 @@ def _estimate_trace_abstract_eval(key, operator, state, k, estimator):
     return out
 
 
-@ft.singledispatch
-def _make_identity(op: lx.AbstractLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    raise ValueError("Unsupported type!")
-
-
-@_make_identity.register
-def _(op: lx.MatrixLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
-    in_size, out_size = eqx.filter_eval_shape(lambda o: (o.in_size(), o.out_size()), operator_struct)
-    if in_size != out_size:
-        raise ValueError("`_make_identity` only supports square matrices.")
-    diag = jnp.full(in_size, ct_result)
-    out = lx.MatrixLinearOperator(jnp.diag(diag), tags=operator_struct.tags)
-    return out
-
-
-@_make_identity.register
-def _(op: lx.MulLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    inner_op = _make_identity(op.operator, ct_result)
-    scalar = jnp.array(1.0)
-    return lx.MulLinearOperator(inner_op, scalar*ct_result)
-
-
-@_make_identity.register
-def _(op: lx.TangentLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    p_op = op.primal
-    t_op = op.tangent
-    return lx.TangentLinearOperator(p_op, _make_identity(t_op, ct_result))
-
-
-@_make_identity.register
-def _(op: lx.DiagonalLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
-    in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-    diag = jnp.full(in_size, ct_result)
-    return lx.DiagonalLinearOperator(diag)
-
-
-@_make_identity.register
-def _(op: lx.TridiagonalLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    operator_struct = jtu.tree_map(_remove_undefined_primal, op, is_leaf=_is_undefined)
-    in_size = eqx.filter_eval_shape(lambda o: o.in_size(), operator_struct)
-    diag = jnp.full(in_size, ct_result)
-    off_diag = jnp.zeros(in_size - 1)
-    return lx.TridiagonalLinearOperator(diag, off_diag, off_diag)
-
-
-@_make_identity.register
-def _(op: lx.AddLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    inner_op1 = _make_identity(op.operator1, ct_result)
-    inner_op2 = _make_identity(op.operator2, ct_result)
-    return lx.AddLinearOperator(inner_op1, inner_op2)
-
-
-@_make_identity.register
-def _(op: lx.NegLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    inner_op = _make_identity(op.operator, ct_result)
-    return lx.NegLinearOperator(inner_op)
-
-
-@_make_identity.register
-def _(op: lx.DivLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    inner_op = _make_identity(op.operator, ct_result)
-    scalar = op.scalar
-    return lx.DivLinearOperator(inner_op, scalar)
-
-
-@_make_identity.register
-def _(op: lx.ComposedLinearOperator, ct_result: float) -> lx.AbstractLinearOperator:
-    inner_op1 = _make_identity(op.operator1, ct_result)
-    inner_op2 = _make_identity(op.operator2, ct_result)
-    return lx.ComposedLinearOperator(inner_op1, inner_op2)
-
-
 @eqxi.filter_primitive_jvp
 def _estimate_trace_jvp(primals, tangents):
+    """Functional-mode JVP rule.
+
+    The primal output remains the requested estimator's value. The tangent output
+    estimates the derivative of the trace functional, `trace(dA)`, with the same
+    probe key. This keeps JVP linear in the operator tangent even for nonlinear
+    variance-reduced estimators such as Hutch++ and XTrace.
+    """
     key, operator, state, k, estimator = primals
-    # t_operator := V
+
     t_key, t_operator, t_state, t_k, t_estimator = tangents
+    # The stochastic key, estimator state, probe count, and estimator object are
+    # configuration for the stochastic oracle. Differentiating them is undefined.
     jtu.tree_map(_assert_false, (t_key, t_state, t_k, t_estimator))
     del t_key, t_state, t_k, t_estimator
 
-    # primal problem of t = tr(A)
+    # compute the primal
     result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
     out = result, stats
 
-    # inner prodct in linear operator space => <A, B> = tr(A @ B)
-    # d tr(A) / dA = I
-    # t' = <tr'(A), V> = tr(I @ V) = tr(V)
-    # tangent problem => tr(V)
-    # TODO: should we reuse key or split? both seem confusing options
-    key, t_key = rdm.split(key)
+    # The tangent problem is `trace(V)`, where `V` is the operator tangent. We
+    # wrap `V` as a Lineax operator and estimate that trace with the
+    # estimator-specific functional AD surrogate. Surrogates may use the primal
+    # operator to build stopped sketches, but must remain linear in `V`.
+    t_operator = _TangentLinearOperator(operator, t_operator, scalar=jnp.asarray(1.0))
 
-    t_operator = jtu.tree_map(eqxi.materialise_zeros, operator, t_operator, is_leaf=_is_none)
-    t_operator = lx.TangentLinearOperator(operator, t_operator)
-
-    t_state = estimator.init(t_key, t_operator)
-    t_result, _ = eqxi.filter_primitive_bind(_estimate_trace_p, t_key, t_operator, t_state, k, estimator)
-    # t_result = jnp.trace(t_operator.as_matrix())
+    # Cast to the primal estimator dtype so JAX sees a dtype-consistent custom
+    # JVP even when the primal estimator samples in float64 and the operator is
+    # float32.
+    t_result = jnp.asarray(_functional_trace_estimate(key, operator, t_operator, k, estimator), dtype=result.dtype)
     t_out = (
         t_result,
         jtu.tree_map(lambda _: None, stats),
@@ -467,25 +634,33 @@ def _estimate_trace_jvp(primals, tangents):
 
 @eqxi.filter_primitive_transpose(materialise_zeros=True)  # pyright: ignore
 def _estimate_trace_transpose(inputs, cts_out):
-    # the jacobian, for the trace is just the identity matrix, i.e. J = I
-    # so J'v = I v = v
+    """Functional-mode transpose rule.
 
-    # primal inputs; operator should have UndefinedPrimal leaves
-    key, operator, state, _, estimator = inputs
+    Reverse mode must return a cotangent PyTree matching the primal operator,
+    not a matrix-like object. We get that by differentiating the same functional
+    AD surrogate used by the JVP and asking Equinox for its pullback.
+    """
+    key, operator, state, k, estimator = inputs
 
-    # co-tangent of the trace approximation and the stats (None)
     cts_result, _ = cts_out
 
-    # the internals of the operator are UndefinedPrimal leaves so
-    # we need to rely on abstract values to pull structure info
-    op_t = _make_identity(operator, cts_result)
+    def probe_trace(primal_operator):
+        # Match the incoming cotangent dtype for the same reason as the JVP cast:
+        # JAX transpose rules are stricter about mixed dtypes than ordinary
+        # `jnp` promotion.
+        estimate = _functional_trace_estimate(key, primal_operator, primal_operator, k, estimator)
+        return jnp.asarray(estimate, dtype=cts_result.dtype)
 
+    _, pullback = eqx.filter_vjp(probe_trace, operator.primal)
+    (op_ct,) = pullback(cts_result)
+    # Only the operator is differentiable. The rest of the primitive inputs are
+    # stochastic/configuration data and therefore receive `None` cotangents.
     key_none = jtu.tree_map(lambda _: None, key)
-    state_none = (None, op_t, None)
+    state_none = jtu.tree_map(lambda _: None, state)
     k_none = None
     estimator_none = jtu.tree_map(lambda _: None, estimator)
 
-    return key_none, op_t, state_none, k_none, estimator_none
+    return key_none, op_ct, state_none, k_none, estimator_none
 
 
 _estimate_trace_p = eqxi.create_vprim(
@@ -495,7 +670,9 @@ _estimate_trace_p = eqxi.create_vprim(
     _estimate_trace_jvp,
     _estimate_trace_transpose,
 )
-# rebind here to allow closure checks
+# Rebind the concrete implementation with closure checks after shape inference
+# has been registered. Abstract evaluation cannot use `nontraceable` because it
+# must operate on shape/dtype structures rather than concrete arrays.
 _estimate_trace_p.def_impl(
     eqxi.filter_primitive_def(ft.partial(_estimate_trace_impl, check_closure=True)),
 )
@@ -510,8 +687,48 @@ def trace(
     estimator: AbstractEstimator = XTraceEstimator(),
     *,
     state: PyTree[Any] = sentinel,
+    grad_mode: TraceGradMode = "functional",
 ) -> Solution:
-    r""" """
+    r"""Estimate the trace of a linear operator.
+
+    !!! warning "Automatic differentiation semantics"
+
+        By default, `traceax.trace` defines AD for the trace functional, not for
+        the realized estimator program. With `grad_mode="functional"`, the
+        primal value is computed with `estimator`, while JVP/VJP rules estimate
+        `trace(dA)` with an estimator-specific functional surrogate. Hutch++
+        uses a frozen low-rank sketch: the sketch is built from the primal
+        operator and treated as constant for AD, then the tangent operator is
+        applied to the stopped sketch vectors. Estimators without a specialized
+        functional rule use a fixed-probe Hutchinson fallback. This is useful as
+        a stochastic gradient oracle for objectives involving `trace(A)`, but
+        the returned gradient is not generally the gradient of the exact sampled
+        estimator scalar.
+
+        Use `grad_mode="estimator"` to differentiate through the estimator
+        implementation itself, including QR, low-rank bases, correction terms,
+        and other estimator-specific computations.
+
+        Simple operators may bypass the estimator. Identity and diagonal
+        operators return exact traces before estimator-specific logic or
+        `grad_mode` handling, so their gradients follow the exact shortcut.
+
+    **Arguments:**
+
+    - `key`: PRNG key used by stochastic trace estimators.
+    - `operator`: Square real-valued `lineax.AbstractLinearOperator`.
+    - `k`: Python `int` controlling the number of probe vectors. Estimators may
+        require a minimum `k`.
+    - `estimator`: Trace estimator used for the primal estimate.
+    - `state`: Optional reusable estimator state. For built-in estimators this
+        preserves the state's PRNG key but refreshes the state around the current
+        operator, so the returned value and AD rule refer to the same operator.
+    - `grad_mode`: AD semantics. `"functional"` returns a stochastic gradient
+        oracle for the trace functional, using specialized frozen-sketch rules
+        where available and a Hutchinson probe fallback otherwise. `"estimator"`
+        differentiates through the estimator program itself. Exact identity and
+        diagonal shortcuts are used before estimator-specific logic.
+    """
     if eqx.is_array(operator):
         raise ValueError(
             "`traceax.trace(..., operator=...)` should be an "
@@ -527,18 +744,23 @@ def trace(
             "`traceax.trace(..., operator=...)` should be a square `lineax.AbstractLinearOperator`. "
             f"Found shape {out_size}x{in_size}."
         )
+    _check_real_operator(operator)
+    _check_k(k, in_size, type(estimator).__name__)
 
-    # if identity op, then just shortcircuit and return dimension size
+    if grad_mode not in _TRACE_GRAD_MODES:
+        raise ValueError(f"`grad_mode` must be one of {_TRACE_GRAD_MODES}. Found {grad_mode!r}.")
+
+    # These exact cases avoid stochastic noise and preserve the simplest AD
+    # contract: the gradient is the exact trace derivative of the shortcut.
     if isinstance(operator, lx.IdentityLinearOperator):
         return Solution(
             value=jnp.asarray(in_size, dtype=float),
             stats={},
             state=state,
         )
-    # if diagonal op, then just shortcircuit and sum diagonal
     if isinstance(operator, lx.DiagonalLinearOperator):
         return Solution(
-            value=jnp.sum(operator.diagonal),
+            value=_sum_leaves(operator.diagonal),
             stats={},
             state=state,
         )
@@ -546,21 +768,35 @@ def trace(
     # set up state if necessary
     if state == sentinel:
         state = estimator.init(key, operator)
-        # we don't want to allow differntiate through trace-alg state, which likely contains the operator
-        # or by-products of the operator
+    else:
+        # Built-in states carry the operator internally. Refreshing the state
+        # preserves reproducibility from the state key while avoiding stale
+        # operator values.
+        state = _refresh_builtin_state_operator(state, operator, estimator)
+
+    if grad_mode == "functional":
+        # We don't differentiate through trace-algorithm state, which may contain
+        # the operator or estimator by-products. The primitive owns the AD rule.
         dynamic_state, static_state = eqx.partition(state, eqx.is_array)
         dynamic_state = lax.stop_gradient(dynamic_state)
         state = eqx.combine(dynamic_state, static_state)
 
-    # cannot differentiate through key, state, or estimator
+    # cannot differentiate through key or estimator
     key = eqxi.nondifferentiable(key, name="`trace(key, ...)`")
-    state = eqxi.nondifferentiable(state, name="`trace(..., state=...)`")
     estimator = eqxi.nondifferentiable(estimator, name="`trace(..., estimator=...)`")
 
-    # estimate trace and compute stats if any
-    result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
+    if grad_mode == "functional":
+        # Functional mode owns its derivative rule through the primitive, so the
+        # estimator state is treated as nondifferentiable bookkeeping.
+        state = eqxi.nondifferentiable(state, name="`trace(..., state=...)`")
+        result, stats = eqxi.filter_primitive_bind(_estimate_trace_p, key, operator, state, k, estimator)
+    else:
+        # Estimator mode deliberately exposes the estimator implementation to
+        # JAX AD, including QR factorizations and correction terms.
+        result, stats = estimator.estimate(state, k)
 
-    # cannot differentiate backwards through stats
+    # Stats are diagnostics rather than optimization variables. Blocking their
+    # cotangents avoids accidental differentiation through metadata.
     stats = eqxi.nondifferentiable_backward(stats, name="_, stats = trace(...)")
 
     return Solution(value=result, stats=stats, state=state)

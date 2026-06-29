@@ -1,0 +1,98 @@
+[project]
+strict = true
+site_name = "Traceax"
+site_description = "The documentation for the traceax software library."
+site_url = "https://mancusolab.github.io/traceax"
+
+repo_url = "https://github.com/mancusolab/traceax"
+repo_name = "mancusolab/traceax"
+edit_uri = ""
+
+extra_css = ["_static/custom_css.css"]
+
+extra_javascript = [
+    "_static/mathjax.js",
+    "https://polyfill.io/v3/polyfill.min.js?features=es6",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
+]
+
+nav = [
+    "index.md",
+    { "API" = [
+        "api/estimators.md",
+        "api/samplers.md",
+    ] },
+    { "Misc" = [
+        "authors.md",
+        "license.md",
+        "conduct.md",
+    ] },
+]
+
+[project.theme]
+variant = "classic"
+features = [
+    "navigation.sections",
+    "toc.integrate",
+    "header.autohide",
+]
+favicon = "_static/favicon.png"
+custom_dir = "docs/_overrides"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "white"
+accent = "amber"
+toggle = { icon = "material/weather-night", name = "Switch to dark mode" }
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "black"
+accent = "amber"
+toggle = { icon = "material/weather-sunny", name = "Switch to light mode" }
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+logo = "material/sigma"
+
+[project.markdown_extensions.pymdownx.arithmatex]
+generic = true
+
+[project.markdown_extensions.pymdownx.superfences]
+
+[project.markdown_extensions.pymdownx.details]
+
+[project.markdown_extensions.pymdownx.snippets]
+base_path = "docs"
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.toc]
+permalink = "¤"
+toc_depth = 4
+
+[project.plugins.search]
+separator = '[\\s\\-,:!=\\[\\]()"/]+|(?!\\b)(?=[A-Z][a-z])|\\.(?!\\d)|&[lg]t;'
+
+[project.plugins.autorefs]
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+load_external_modules = true
+
+[project.plugins.mkdocstrings.handlers.python.options]
+force_inspection = true
+show_bases = true
+show_source = false
+heading_level = 4
+show_root_heading = true
+show_root_full_path = true
+filters = ["!^_", "^__init__$"]
+inherited_members = true
+members_order = "source"
+show_if_no_docstring = true
+annotations_path = "brief"
+show_signature_annotations = true
+separate_signature = false

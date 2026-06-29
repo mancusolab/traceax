@@ -1,9 +1,9 @@
 name: Build docs
 
 on:
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
+  workflow_dispatch:
 
 # These permissions are required for it to work
 permissions:
@@ -11,48 +11,47 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  # build docs and upload
-  build:
-    strategy:
-      matrix:
-        python-version: [ 3.11 ]
-        os: [ ubuntu-latest ]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install '.[docs]'
-
-      - name: Build docs
-        run: |
-          mkdocs build
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload docs
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site  # where `mkdocs build` puts the built site
-
-  # deployement job
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.pages_url }}
-    runs-on: ${{ matrix.os }}
-    needs: build
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
     steps:
-        - name: Deploy to GitHub Pages
-          id: deployment # This is required for environment
-          uses: actions/deploy-pages@v4
+      - uses: actions/configure-pages@v6
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install docs environment
+        run: uv sync --frozen --extra docs
+
+      - name: Build docs
+        run: uv run zensical build --strict --clean
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci

@@ -69,24 +69,43 @@ key, key1, key2, key3, key4 = rdm.split(key, 5)
 
 # Hutchinson estimator; default samples Rademacher {-1,+1}
 hutch = tx.HutchinsonEstimator()
-print(hutch.estimate(key1, operator, k))  # (Array(3.4099615, dtype=float32), {})
+print(tx.trace(key1, operator, k, hutch).value)  # Array(3.6007538, dtype=float32)
 
 # Hutch++ estimator; default samples Rademacher {-1,+1}
 hpp = tx.HutchPlusPlusEstimator()
-print(hpp.estimate(key2, operator, k))  # (Array(3.3033807, dtype=float32), {})
+print(tx.trace(key2, operator, k, hpp).value)  # Array(3.4094956, dtype=float32)
 
 # XTrace estimator; default samples uniformly on n-Sphere
 xt = tx.XTraceEstimator()
-print(xt.estimate(key3, operator, k))  # (Array(3.3271673, dtype=float32), {'std.err': Array(0.01717775, dtype=float32)})
+result = tx.trace(key3, operator, k, xt)
+print(result.value, result.stats)  # Array(3.3030486, dtype=float32), {'std.err': Array(0.01238528, dtype=float32)}
 
 # XNysTrace estimator; Improved performance for NSD/PSD trace estimates
 operator = lx.TaggedLinearOperator(operator, lx.positive_semidefinite_tag)
 nt = tx.XNysTraceEstimator()
-print(nt.estimate(key4, operator, k))  # (Array(3.3297246, dtype=float32), {'std.err': Array(0.00042093, dtype=float32)})
+result = tx.trace(key4, operator, k, nt)
+print(result.value, result.stats)  # Array(3.3314352, dtype=float32), {'std.err': Array(0.0006521, dtype=float32)}
 ```
 
 ## Notes
 
+-   `traceax.trace` supports two automatic-differentiation modes. The default
+    `grad_mode="functional"` treats AD as a stochastic gradient oracle for the
+    trace functional: the primal value is computed with the requested estimator,
+    while JVP/VJP rules estimate $\mathrm{trace}(dA)$ with an
+    estimator-specific functional surrogate. Hutch++ uses a frozen low-rank
+    sketch for this rule; estimators without a specialized functional rule use
+    a fixed-probe Hutchinson fallback. `grad_mode="estimator"` differentiates
+    through the estimator program itself, including estimator-specific QR,
+    low-rank, and correction computations. Exact identity and diagonal
+    shortcuts are evaluated before estimator-specific logic.
+-   Reusing a returned `Solution.state` preserves the state's PRNG key for the
+    built-in estimators, but the state is refreshed around the operator passed
+    to the current `trace` call so the returned value and AD rule refer to the
+    same linear operator.
+-   `traceax.trace` currently supports real-valued linear operators. Complex
+    operators are rejected until the estimators consistently use Hermitian inner
+    products.
 -   `traceax` uses [JAX](https://github.com/google/jax) with [Just In
     Time](https://jax.readthedocs.io/en/latest/jax-101/02-jitting.html)
     compilation to achieve high-speed computation. However, there are

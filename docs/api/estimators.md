@@ -29,12 +29,13 @@ easy-to-use API for stochastic trace estimation that leverages the flexibility o
 [lineax](https://github.com/patrick-kidger/lineax) linear operators together with
 differentiable and performant [JAX](https://github.com/google/jax) based numerics.
 
-??? abstract "`traceax.AbstractTraceEstimator`"
+??? abstract "`traceax.AbstractEstimator`"
 
-    ::: traceax.AbstractTraceEstimator
+    ::: traceax.AbstractEstimator
         options:
             show_bases: false
             members:
+            - init
             - estimate
             - __call__
 

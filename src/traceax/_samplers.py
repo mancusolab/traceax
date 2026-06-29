@@ -74,7 +74,7 @@ class NormalSampler(AbstractSampler, strict=True):
         Supports float and complex-valued types.
     """
 
-    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=float)
+    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=float)  # ty: ignore[invalid-assignment]
 
     def __check_init__(self):
         if not issubdtype(self.dtype, jnp.inexact):
@@ -102,7 +102,7 @@ class SphereSampler(AbstractSampler, strict=True):
         Supports float and complex-valued types.
     """
 
-    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=float)
+    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=float)  # ty: ignore[invalid-assignment]
 
     def __check_init__(self):
         if not issubdtype(self.dtype, jnp.inexact):
@@ -128,7 +128,7 @@ class RademacherSampler(AbstractSampler, strict=True):
         Supports integer, float, and complex-valued types.
     """
 
-    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=int)
+    dtype: DTypeLike = eqx.field(converter=canonicalize_dtype, default=int)  # ty: ignore[invalid-assignment]
 
     def __check_init__(self):
         if not issubdtype(self.dtype, jnp.number):
