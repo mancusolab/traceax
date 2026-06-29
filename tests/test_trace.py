@@ -116,6 +116,28 @@ def _trace(getkey, operator, k=FAST_K, estimator=tx.HutchinsonEstimator()):
     return tx.trace(getkey(), operator, k, estimator)
 
 
+def _project_columns(operator, samples):
+    input_leaves = jax.tree.leaves(operator.in_structure())
+    samples = samples.astype(input_leaves[0].dtype)
+    return jax.vmap(operator.mv, in_axes=1, out_axes=1)(samples)
+
+
+def _frozen_hutchplusplus_value(key, operator, k):
+    samples = tx.RademacherSampler()(key, operator.in_size(), 2 * (k // 3))
+    X1 = samples[:, : k // 3]
+    X2 = samples[:, k // 3 :]
+
+    Y = _project_columns(operator, X1)
+    Q, _ = jnp.linalg.qr(Y)
+    Q = jax.lax.stop_gradient(Q)
+    G = X2 - Q @ (Q.T @ X2)
+    G = jax.lax.stop_gradient(G)
+
+    AQ = _project_columns(operator, Q)
+    AG = _project_columns(operator, G)
+    return jnp.sum(AQ * Q) + jnp.sum(AG * G) / G.shape[1]
+
+
 def _function_operator(matrix):
     input_structure = jax.ShapeDtypeStruct((matrix.shape[1],), matrix.dtype)
 
@@ -435,6 +457,42 @@ def test_trace_functional_jvp_matches_linear_probe_jvp(getkey):
     assert jnp.allclose(actual_tangent, expected_tangent)
 
 
+def test_hutchplusplus_functional_jvp_is_linear_in_tangent(getkey):
+    key = getkey()
+    matrix = construct_matrix(getkey, None, FAST_SIZE, FAST_DTYPE)
+    direction1 = construct_matrix(getkey, None, FAST_SIZE, FAST_DTYPE)
+    direction2 = construct_matrix(getkey, lx.symmetric_tag, FAST_SIZE, FAST_DTYPE)
+    a = jnp.asarray(0.25, dtype=FAST_DTYPE)
+    b = jnp.asarray(-1.5, dtype=FAST_DTYPE)
+
+    def trace_value(matrix):
+        operator = lx.MatrixLinearOperator(matrix)
+        return tx.trace(key, operator, FAST_K, tx.HutchPlusPlusEstimator(), grad_mode="functional").value
+
+    _value, combined_tangent = jax.jvp(trace_value, (matrix,), (a * direction1 + b * direction2,))
+    _value, tangent1 = jax.jvp(trace_value, (matrix,), (direction1,))
+    _value, tangent2 = jax.jvp(trace_value, (matrix,), (direction2,))
+
+    assert jnp.allclose(combined_tangent, a * tangent1 + b * tangent2, rtol=1e-5, atol=1e-5)
+
+
+def test_hutchplusplus_functional_vjp_matches_jvp_pairing(getkey):
+    key = getkey()
+    matrix = construct_matrix(getkey, None, FAST_SIZE, FAST_DTYPE)
+    direction = construct_matrix(getkey, lx.symmetric_tag, FAST_SIZE, FAST_DTYPE)
+    cotangent = jnp.asarray(0.37, dtype=FAST_DTYPE)
+
+    def trace_value(matrix):
+        operator = lx.MatrixLinearOperator(matrix)
+        return tx.trace(key, operator, FAST_K, tx.HutchPlusPlusEstimator(), grad_mode="functional").value
+
+    _value, tangent = jax.jvp(trace_value, (matrix,), (direction,))
+    _value, pullback = jax.vjp(trace_value, matrix)
+    (matrix_cotangent,) = pullback(cotangent)
+
+    assert jnp.allclose(jnp.sum(matrix_cotangent * direction), cotangent * tangent, rtol=1e-5, atol=1e-5)
+
+
 def test_trace_grad_estimator_mode_matches_estimator_program(getkey):
     key = getkey()
     estimator = tx.XTraceEstimator()
@@ -469,24 +527,12 @@ def test_hutchplusplus_functional_grad_matches_frozen_sketch_pullback(getkey):
 
     def frozen_sketch_value(matrix):
         operator = lx.MatrixLinearOperator(matrix)
-        samples = tx.RademacherSampler()(key, FAST_SIZE, 2 * (k // 3))
-        X1 = samples[:, : k // 3]
-        X2 = samples[:, k // 3 :]
-
-        Y = jax.vmap(operator.mv, in_axes=1, out_axes=1)(X1)
-        Q, _ = jnp.linalg.qr(Y)
-        Q = jax.lax.stop_gradient(Q)
-        G = X2 - Q @ (Q.T @ X2)
-        G = jax.lax.stop_gradient(G)
-
-        AQ = jax.vmap(operator.mv, in_axes=1, out_axes=1)(Q)
-        AG = jax.vmap(operator.mv, in_axes=1, out_axes=1)(G)
-        return jnp.sum(AQ * Q) + jnp.sum(AG * G) / G.shape[1]
+        return _frozen_hutchplusplus_value(key, operator, k)
 
     def hutchinson_value(matrix):
         operator = lx.MatrixLinearOperator(matrix)
         samples = tx.RademacherSampler()(key, FAST_SIZE, k)
-        projected = jax.vmap(operator.mv, in_axes=1, out_axes=1)(samples)
+        projected = _project_columns(operator, samples)
         return jnp.sum(projected * samples) / k
 
     actual = jax.grad(trace_value)(matrix)
@@ -496,6 +542,27 @@ def test_hutchplusplus_functional_grad_matches_frozen_sketch_pullback(getkey):
     assert actual.shape == matrix.shape
     assert jnp.allclose(actual, expected, rtol=1e-5, atol=1e-5)
     assert not jnp.allclose(expected, hutchinson_expected, rtol=1e-5, atol=1e-5)
+
+
+def test_hutchplusplus_functional_grad_matches_frozen_function_operator_pullback(getkey):
+    key = getkey()
+    matrix = construct_matrix(getkey, None, FAST_SIZE, FAST_DTYPE)
+    estimator = tx.HutchPlusPlusEstimator()
+    k = FAST_K
+
+    def trace_value(matrix):
+        operator = _function_operator(matrix)
+        return tx.trace(key, operator, k, estimator, grad_mode="functional").value
+
+    def frozen_sketch_value(matrix):
+        operator = _function_operator(matrix)
+        return _frozen_hutchplusplus_value(key, operator, k)
+
+    actual = jax.grad(trace_value)(matrix)
+    expected = jax.grad(frozen_sketch_value)(matrix)
+
+    assert actual.shape == matrix.shape
+    assert jnp.allclose(actual, expected, rtol=1e-5, atol=1e-5)
 
 
 def test_trace_rejects_unknown_grad_mode(getkey):
@@ -548,6 +615,23 @@ def test_pytree_linear_operator_trace_and_grad(getkey):
     scale = jnp.asarray(2.0, dtype=FAST_DTYPE)
     actual_value, actual_grad = jax.value_and_grad(trace_value)(scale)
     expected_grad = sum(jnp.sum(leaf) for leaf in jax.tree.leaves(diagonal))
+
+    assert jnp.allclose(actual_value, scale * expected_grad)
+    assert jnp.allclose(actual_grad, expected_grad)
+
+
+def test_diagonal_linear_operator_hutchplusplus_shortcut_grad_is_exact():
+    diagonal = jnp.arange(1, FAST_SIZE + 1, dtype=FAST_DTYPE)
+    key = jax.random.PRNGKey(0)
+    estimator = tx.HutchPlusPlusEstimator()
+
+    def trace_value(scale):
+        operator = lx.DiagonalLinearOperator(scale * diagonal)
+        return tx.trace(key, operator, FAST_K, estimator, grad_mode="functional").value
+
+    scale = jnp.asarray(2.0, dtype=FAST_DTYPE)
+    actual_value, actual_grad = jax.value_and_grad(trace_value)(scale)
+    expected_grad = jnp.sum(diagonal)
 
     assert jnp.allclose(actual_value, scale * expected_grad)
     assert jnp.allclose(actual_grad, expected_grad)
