@@ -1,12 +1,12 @@
-{% extends "_base/class.html" %}
+{% extends "_base/class.html.jinja" %}
 {% block heading scoped %}
 {% if config.show_bases and class.bases %}
   <code>{{ class_name }}(
     {%- for expression in class.bases -%}
       {% if loop.last %}
-        {% include "expression.html" with context %})</code>
+        {% include "expression.html.jinja" with context %})</code>
       {% else %}
-        {% include "expression.html" with context %},
+        {% include "expression.html.jinja" with context %},
       {% endif %}
     {% endfor %}
 {% else %}

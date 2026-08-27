@@ -30,7 +30,7 @@
             {%- set ns.equal = " = " -%}
             {%- if config.separate_signature and config.signature_crossrefs -%}
               {%- with expression = parameter.annotation -%}
-                {%- set ns.annotation -%}: {% include "expression.html" with context %}{%- endset -%}
+                {%- set ns.annotation -%}: {% include "expression.html.jinja" with context %}{%- endset -%}
               {%- endwith -%}
             {%- else -%}
               {%- set ns.annotation = ": " + parameter.annotation|safe -%}
@@ -59,7 +59,7 @@
         and function.annotation
         and not (config.merge_init_into_class and function.name == "__init__" )
     %} -> {% if config.separate_signature and config.signature_crossrefs -%}
-        {%- with expression = function.annotation %}{% include "expression.html" with context %}{%- endwith -%}
+        {%- with expression = function.annotation %}{% include "expression.html.jinja" with context %}{%- endwith -%}
       {%- else -%}
         {{ function.annotation|safe }}
       {%- endif -%}
