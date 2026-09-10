@@ -15,17 +15,20 @@
 from importlib.metadata import PackageNotFoundError, version  # pragma: no cover
 
 from ._estimators import (
-    AbstractTraceEstimator as AbstractTraceEstimator,
-    HutchinsonEstimator as HutchinsonEstimator,
-    HutchPlusPlusEstimator as HutchPlusPlusEstimator,
-    XNysTraceEstimator as XNysTraceEstimator,
-    XTraceEstimator as XTraceEstimator,
+    AbstractEstimator as AbstractEstimator,
 )
 from ._samplers import (
     AbstractSampler as AbstractSampler,
     NormalSampler as NormalSampler,
     RademacherSampler as RademacherSampler,
     SphereSampler as SphereSampler,
+)
+from ._trace import (
+    HutchinsonEstimator as HutchinsonEstimator,
+    HutchPlusPlusEstimator as HutchPlusPlusEstimator,
+    trace as trace,
+    XNysTraceEstimator as XNysTraceEstimator,
+    XTraceEstimator as XTraceEstimator,
 )
 
 
